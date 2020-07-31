@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/contentlibrary"
-	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/ovfdeploy"
 	"log"
 	"net"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/contentlibrary"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/ovfdeploy"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
@@ -523,12 +524,15 @@ func resourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("error reading virtual machine configuration: %s", err)
 	}
 
-	// Read the VM Home storage policy if associated.
-	polID, err := spbm.PolicyIDByVirtualMachine(client, moid)
-	if err != nil {
-		return err
+	//PolicyIDByVirtualMachine is only available on vCenter
+	if err := viapi.ValidateVirtualCenter(client); err == nil {
+		// Read the VM Home storage policy if associated.
+		polID, err := spbm.PolicyIDByVirtualMachine(client, moid)
+		if err != nil {
+			return err
+		}
+		d.Set("storage_policy_id", polID)
 	}
-	d.Set("storage_policy_id", polID)
 
 	// Read the PCI passthrough devices.
 	var pciDevs []string
