@@ -1323,11 +1323,15 @@ func (r *DiskSubresource) Read(l object.VirtualDeviceList) error {
 		if err != nil {
 			return err
 		}
-		polID, err := spbm.PolicyIDByVirtualDisk(r.client, result.MOID, r.Get("key").(int))
-		if err != nil {
-			return err
+
+		//PolicyIDByVirtualDisk only accessible via vCenter
+		if err := viapi.ValidateVirtualCenter(r.client); err == nil {
+			polID, err := spbm.PolicyIDByVirtualDisk(r.client, result.MOID, r.Get("key").(int))
+			if err != nil {
+				return err
+			}
+			r.Set("storage_policy_id", polID)
 		}
-		r.Set("storage_policy_id", polID)
 	}
 
 	log.Printf("[DEBUG] %s: Read finished (key and device address may have changed)", r)
