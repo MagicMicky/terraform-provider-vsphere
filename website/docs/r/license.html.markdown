@@ -1,4 +1,5 @@
 ---
+subcategory: "Administration"
 layout: "vsphere"
 page_title: "VMware vSphere: vsphere_license"
 sidebar_current: "docs-vsphere-resource-admin-license"
@@ -18,9 +19,9 @@ resource "vsphere_license" "licenseKey" {
 
   labels {
     VpxClientLicenseLabel = "Hello World"
-    Workflow = "Hello World"
+    Workflow              = "Hello World"
   }
-  
+
 }
 ```
 

@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
 
 func TestAccResourceVSphereHostVirtualSwitch_basic(t *testing.T) {
@@ -21,6 +21,22 @@ func TestAccResourceVSphereHostVirtualSwitch_basic(t *testing.T) {
 		CheckDestroy: testAccResourceVSphereHostVirtualSwitchExists(false),
 		Steps: []resource.TestStep{
 			{
+				Config: testAccResourceVSphereHostVirtualSwitchConfig(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereHostVirtualSwitchExists(true),
+				),
+			},
+			{
+				ResourceName:      "vsphere_host_virtual_switch.switch",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					vars, err := testClientVariablesForResource(s, fmt.Sprintf("vsphere_host_virtual_switch.%s", "switch"))
+					if err != nil {
+						return "", err
+					}
+					return vars.resourceID, err
+				},
 				Config: testAccResourceVSphereHostVirtualSwitchConfig(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereHostVirtualSwitchExists(true),
@@ -81,11 +97,12 @@ func TestAccResourceVSphereHostVirtualSwitch_badActiveNICList(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereHostVirtualSwitchPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereHostVirtualSwitchExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccResourceVSphereHostVirtualSwitchConfigBadActive(),
-				ExpectError: regexp.MustCompile(fmt.Sprintf("active NIC entry %q not present in network_adapters list", os.Getenv("VSPHERE_HOST_NIC0"))),
+				ExpectError: regexp.MustCompile(fmt.Sprintf("active NIC entry %q not present in network_adapters list", os.Getenv("TF_VAR_VSPHERE_HOST_NIC0"))),
 				PlanOnly:    true,
 			},
 			{
@@ -102,11 +119,12 @@ func TestAccResourceVSphereHostVirtualSwitch_badStandbyNICList(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereHostVirtualSwitchPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereHostVirtualSwitchExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccResourceVSphereHostVirtualSwitchConfigBadStandby(),
-				ExpectError: regexp.MustCompile(fmt.Sprintf("standby NIC entry %q not present in network_adapters list", os.Getenv("VSPHERE_HOST_NIC0"))),
+				ExpectError: regexp.MustCompile(fmt.Sprintf("standby NIC entry %q not present in network_adapters list", os.Getenv("TF_VAR_VSPHERE_HOST_NIC0"))),
 				PlanOnly:    true,
 			},
 			{
@@ -143,94 +161,15 @@ func TestAccResourceVSphereHostVirtualSwitch_removeAllNICs(t *testing.T) {
 	})
 }
 
-func TestAccResourceVSphereHostVirtualSwitch_standbyWithExplicitFailoverOrder(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereHostVirtualSwitchPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereHostVirtualSwitchExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereHostVirtualSwitchConfigStandbyLink(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostVirtualSwitchExists(true),
-				),
-			},
-		},
-	})
-}
-
-func TestAccResourceVSphereHostVirtualSwitch_changeToStandby(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereHostVirtualSwitchPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereHostVirtualSwitchExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereHostVirtualSwitchConfig(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostVirtualSwitchExists(true),
-				),
-			},
-			{
-				Config: testAccResourceVSphereHostVirtualSwitchConfigStandbyLink(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostVirtualSwitchExists(true),
-				),
-			},
-		},
-	})
-}
-
-func TestAccResourceVSphereHostVirtualSwitch_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereHostVirtualSwitchPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereHostVirtualSwitchExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereHostVirtualSwitchConfig(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostVirtualSwitchExists(true),
-				),
-			},
-			{
-				ResourceName:      "vsphere_host_virtual_switch.switch",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					vars, err := testClientVariablesForResource(s, fmt.Sprintf("vsphere_host_virtual_switch.%s", "switch"))
-					if err != nil {
-						return "", err
-					}
-					return vars.resourceID, err
-				},
-				Config: testAccResourceVSphereHostVirtualSwitchConfig(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereHostVirtualSwitchExists(true),
-				),
-			},
-		},
-	})
-}
-
 func testAccResourceVSphereHostVirtualSwitchPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_HOST_NIC0") == "" {
-		t.Skip("set VSPHERE_HOST_NIC0 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_HOST_NIC0") == "" {
+		t.Skip("set TF_VAR_VSPHERE_HOST_NIC0 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_HOST_NIC1") == "" {
-		t.Skip("set VSPHERE_HOST_NIC1 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_HOST_NIC1") == "" {
+		t.Skip("set TF_VAR_VSPHERE_HOST_NIC1 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST to run vsphere_host_virtual_switch acceptance tests")
 	}
 }
 
@@ -238,7 +177,11 @@ func testAccResourceVSphereHostVirtualSwitchExists(expected bool) resource.TestC
 	return func(s *terraform.State) error {
 		vars, err := testClientVariablesForResource(s, "vsphere_host_virtual_switch.switch")
 		if err != nil {
-			return errors.New("vsphere_host_virtual_switch.switch not found in state")
+			if expected {
+				return errors.New("vsphere_host_virtual_switch.switch not found in state")
+			} else {
+				return nil
+			}
 		}
 
 		hsID, name, err := splitHostVirtualSwitchID(vars.resourceID)
@@ -298,10 +241,6 @@ variable "host_nic0" {
   default = "%s"
 }
 
-variable "host_nic1" {
-  default = "%s"
-}
-
 data "vsphere_datacenter" "datacenter" {
   name = "%s"
 }
@@ -317,10 +256,12 @@ resource "vsphere_host_virtual_switch" "switch" {
 
   network_adapters = ["${var.host_nic0}", "${var.host_nic1}"]
 
-  active_nics  = ["${var.host_nic0}", "${var.host_nic1}"]
+  active_nics  = ["${var.host_nic0}"]
   standby_nics = []
 }
-`, os.Getenv("VSPHERE_HOST_NIC0"), os.Getenv("VSPHERE_HOST_NIC1"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"))
 }
 
 func testAccResourceVSphereHostVirtualSwitchConfigSingleNIC() string {
@@ -347,7 +288,9 @@ resource "vsphere_host_virtual_switch" "switch" {
   active_nics  = ["${var.host_nic0}"]
   standby_nics = []
 }
-`, os.Getenv("VSPHERE_HOST_NIC0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"))
 }
 
 func testAccResourceVSphereHostVirtualSwitchConfigNoNIC() string {
@@ -374,7 +317,9 @@ resource "vsphere_host_virtual_switch" "switch" {
   active_nics  = []
   standby_nics = []
 }
-`, os.Getenv("VSPHERE_HOST_NIC0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"))
 }
 
 func testAccResourceVSphereHostVirtualSwitchConfigBadActive() string {
@@ -401,7 +346,9 @@ resource "vsphere_host_virtual_switch" "switch" {
   active_nics  = ["${var.host_nic0}"]
   standby_nics = []
 }
-`, os.Getenv("VSPHERE_HOST_NIC0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"))
 }
 
 func testAccResourceVSphereHostVirtualSwitchConfigBadStandby() string {
@@ -428,37 +375,7 @@ resource "vsphere_host_virtual_switch" "switch" {
   active_nics  = []
   standby_nics = ["${var.host_nic0}"]
 }
-`, os.Getenv("VSPHERE_HOST_NIC0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
-}
-
-func testAccResourceVSphereHostVirtualSwitchConfigStandbyLink() string {
-	return fmt.Sprintf(`
-variable "host_nic0" {
-  default = "%s"
-}
-
-variable "host_nic1" {
-  default = "%s"
-}
-
-data "vsphere_datacenter" "datacenter" {
-  name = "%s"
-}
-
-data "vsphere_host" "esxi_host" {
-  name          = "%s"
-  datacenter_id = "${data.vsphere_datacenter.datacenter.id}"
-}
-
-resource "vsphere_host_virtual_switch" "switch" {
-  name           = "vSwitchTerraformTest"
-  host_system_id = "${data.vsphere_host.esxi_host.id}"
-
-  network_adapters = ["${var.host_nic0}", "${var.host_nic1}"]
-
-  active_nics    = ["${var.host_nic0}"]
-  standby_nics   = ["${var.host_nic1}"]
-  teaming_policy = "failover_explicit"
-}
-`, os.Getenv("VSPHERE_HOST_NIC0"), os.Getenv("VSPHERE_HOST_NIC1"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"))
 }

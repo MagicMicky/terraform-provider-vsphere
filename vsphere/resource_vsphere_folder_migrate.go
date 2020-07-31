@@ -3,8 +3,8 @@ package vsphere
 import (
 	"log"
 
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
 )
 
 // resourceVSphereFolderMigrateState is the master state migration function for

@@ -1,13 +1,13 @@
 package vsphere
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
 
-	"context"
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 	"github.com/vmware/govmomi/find"
 )
 
@@ -140,7 +140,7 @@ func TestAccResourceVSphereDatacenter_createOnRootFolder(t *testing.T) {
 
 // Create a datacenter on a subfolder
 func TestAccResourceVSphereDatacenter_createOnSubfolder(t *testing.T) {
-	dcFolder := os.Getenv("VSPHERE_DC_FOLDER")
+	dcFolder := os.Getenv("TF_VAR_VSPHERE_DC_FOLDER")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
@@ -340,7 +340,7 @@ func testAccResourceVSphereDatacenterCheckTags(tagResName string) resource.TestC
 		if err != nil {
 			return err
 		}
-		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsClient()
+		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsManager()
 		if err != nil {
 			return err
 		}

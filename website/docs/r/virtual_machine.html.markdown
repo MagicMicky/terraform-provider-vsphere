@@ -1,4 +1,5 @@
 ---
+subcategory: "Virtual Machine"
 layout: "vsphere"
 page_title: "VMware vSphere: vsphere_virtual_machine"
 sidebar_current: "docs-vsphere-resource-vm-virtual-machine-resource"
@@ -41,25 +42,21 @@ automatic naming that vSphere picks for you when creating a virtual machine.
 Control over a virtual disk's name is not supported unless you are attaching an
 external disk with the [`attach`](#attach) attribute.
 
-Virtual disks can be SCSI disks only. The SCSI controllers managed by Terraform
+Virtual disks can be SCSI, SATA or IDE. The storage controllers managed by Terraform
 can vary, depending on the value supplied to
-[`scsi_controller_count`](#scsi_controller_count). This also dictates the
+[`scsi_controller_count`](#scsi_controller_count), 
+[`sata_controller_count`](#sata_controller_count), or 
+[`ide_controller_count`](#ide_controller_count). This also dictates the
 controllers that are checked when looking for disks during a cloning process.
-By default, this value is `1`, meaning that you can have up to 15 disks
-configured on a virtual machine. These are all configured with the controller
-type defined by the [`scsi_type`](#scsi_type) setting. If you are cloning from
-a template, devices will be added or re-configured as necessary.
+SCSI controllers are all configured with the controller type defined by the 
+[`scsi_type`](#scsi_type) setting. If you are cloning from a template, devices
+will be added or re-configured as necessary.
 
 When cloning from a template, you must specify disks of either the same or
 greater size than the disks in the source template when creating a traditional
 clone, or exactly the same size when cloning from snapshot (also known as a
 linked clone). For more details, see the section on [creating a virtual machine
 from a template](#creating-a-virtual-machine-from-a-template).
-
-A maximum of 60 virtual disks can be configured when the
-[`scsi_controller_count`](#scsi_controller_count) setting is configured to its
-maximum of `4` controllers. See the [disk options](#disk-options) section for
-more details.
 
 ### Customization and network waiters
 
@@ -244,6 +241,86 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 ```
+### Deploying VM from an OVF/OVA template
+Ovf and ova templates can be deployed both from local system and remote URL into the 
+vcenter using the `ovf_deploy` property. When deploying from local system, the 
+path to the ovf or ova template needs to be provided. While deploying ovf, all other 
+necessary files like vmdk files also should be present in the same directory as the ovf file. 
+While deploying, the VM properties like `name`, `datacenter_id`, `resource_pool_id`, `datastore_id`, 
+`host_system_id`, `folder`, `scsi_controller_count`, `sata_controller_count`, 
+`ide_controller_count`, and `vapp` can only be set. All other VM properties are taken from the ovf 
+template and setting them in the configuration file is redundant.
+
+~> **NOTE:** Only the vApp properties which are pre-defined in the ovf template can be overwritten. 
+vApp properties from scratch cannot be created.
+
+~> **NOTE:** ovf deployment requires vCenter and is not supported on direct ESXi
+connections.
+
+```hcl
+data "vsphere_datacenter" "dc" {
+  name = "DC"
+}
+
+data "vsphere_datastore" "datastore" {
+  name          = "datastore"
+  datacenter_id = data.vsphere_datacenter.dc.id
+}
+
+data "vsphere_resource_pool" "pool" {
+  name          = "Cluster1/Resources"
+  datacenter_id = data.vsphere_datacenter.dc.id
+}
+
+data "vsphere_host" "host" {
+  name          = "hostip"
+  datacenter_id = data.vsphere_datacenter.dc.id
+}
+
+data "vsphere_network" "network" {
+  name          = "VM Network"
+  datacenter_id = data.vsphere_datacenter.datacenter.id
+}
+
+resource "vsphere_virtual_machine" "vmFromLocalOvf" {
+  name                       = "vm1"
+  resource_pool_id           = data.vsphere_resource_pool.pool.id
+  datastore_id               = data.vsphere_datastore.datastore.id
+  host_system_id             = data.vsphere_host.host.id
+  wait_for_guest_net_timeout = 0
+  wait_for_guest_ip_timeout  = 0
+  datacenter_id              = data.vsphere_datacenter.dc.id
+  ovf_deploy {
+    local_ovf_path       = "Full Path to local ovf/ova file"
+    disk_provisioning    = "thin"
+    ip_protocol          = "IPV4"
+    ip_allocation_policy = "STATIC_MANUAL"
+    ovf_network_map = {
+      "ESX-port-1" = data.vsphere_network.network.id
+      "ESX-port-2" = data.vsphere_network.network.id
+    }
+  }
+  vapp {
+    properties = {
+      "guestinfo.tf.internal.id" = "42"
+    }
+  }
+}
+
+resource "vsphere_virtual_machine" "vmFromRemoteOvf" {
+  name                       = "vm2"
+  resource_pool_id           = data.vsphere_resource_pool.pool.id
+  datastore_id               = data.vsphere_datastore.datastore.id
+  host_system_id             = data.vsphere_host.host.id
+  wait_for_guest_net_timeout = 0
+  wait_for_guest_ip_timeout  = 0
+  datacenter_id              = data.vsphere_datacenter.dc.id
+  ovf_deploy {
+    // Url to remote ovf/ova file
+    remote_ovf_url = "https://download3.vmware.com/software/vmw-tools/nested-esxi/Nested_ESXi7.0_Appliance_Template_v1.ova"
+  }
+}
+```
 
 ### Cloning from an OVF/OVA-created template with vApp properties
 
@@ -253,14 +330,6 @@ properties](#using-vapp-properties-to-supply-ovf-ova-configuration) capabilities
 set appropriate keys that control various configuration settings on the virtual
 machine or virtual appliance. In this scenario, using `customize` is not
 recommended as the functionality has tendency to overlap.
-
-~> **NOTE:** Neither the `vsphere_virtual_machine` resource nor the vSphere
-provider supports importing of OVA or OVF files as this is a workflow that is
-fundamentally not the domain of Terraform. The supported path for deployment in
-Terraform is to first import the virtual machine into a template that has not
-been powered on, and then clone from that template. This can be accomplished
-with [Packer][ext-packer-io], [govc][ext-govc]'s `import.ovf` and `import.ova`
-subcommands, or [ovftool][ext-ovftool].
 
 [ext-packer-io]: https://www.packer.io/
 [ext-govc]: https://github.com/vmware/govmomi/tree/master/govc
@@ -319,7 +388,7 @@ resource "vsphere_virtual_machine" "vm" {
   }
 
   vapp {
-    properties {
+    properties = {
       "guestinfo.tf.internal.id" = "42"
     }
   }
@@ -440,6 +509,8 @@ machine - you cannot assign individual datastore clusters to individual disks.
 In addition to this, you cannot use the [`attach`](#attach) setting to attach
 external disks on virtual machines that are assigned to datastore clusters.
 
+* `datacenter_id` - (Optional) The datacenter id. Required only when deploying
+   an ovf template.
 * `folder` - (Optional) The path to the folder to put this virtual machine in,
   relative to the datacenter that the resource pool is in.
 * `host_system_id` - (Optional) An optional [managed object reference
@@ -459,10 +530,21 @@ external disks on virtual machines that are assigned to datastore clusters.
   specified template. Optional customization options can be submitted as well.
   See [creating a virtual machine from a
   template](#creating-a-virtual-machine-from-a-template) for more details.
+ * `hardware_version` - (Optional) The hardware version number. Valid range
+   is from 4 to 15. The hardware version cannot be downgraded. See [virtual
+   machine hardware compatibility][virtual-machine-hardware-compatibility] for
+   more details.
+ * `pci_device_id` - (Optional) List of host PCI device IDs to create PCI 
+   passthroughs for.
+   
+[virtual-machine-hardware-compatibility]: https://kb.vmware.com/s/article/2007240
 
 ~> **NOTE:** Cloning requires vCenter and is not supported on direct ESXi
 connections.
 
+* `ovf_deploy` - (Optional) When specified, the VM will be deployed from the
+   provided ovf/ova template. See [creating a virtual machine from a 
+   ovf/ova template](#creating-vm-from-deploying-a-ovf-ova-template) for more details.
 * `vapp` - (Optional) Optional vApp configuration. The only sub-key available
   is `properties`, which is a key/value map of properties for virtual machines
   imported from OVF or OVA files. See [Using vApp properties to supply OVF/OVA
@@ -471,7 +553,7 @@ connections.
 * `guest_id` - (Optional) The guest ID for the operating system type. For a
   full list of possible values, see [here][vmware-docs-guest-ids]. Default: `other-64`.
 
-[vmware-docs-guest-ids]: https://pubs.vmware.com/vsphere-6-5/topic/com.vmware.wssdk.apiref.doc/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html
+[vmware-docs-guest-ids]: https://code.vmware.com/apis/358/doc/vim.vm.GuestOsDescriptor.GuestOsIdentifier.html
 
 * `alternate_guest_name` - (Optional) The guest name for the operating system
   when `guest_id` is `other` or `other-64`.
@@ -512,15 +594,18 @@ requires vCenter 6.0 or higher.
 ~> **NOTE:** Custom attributes are unsupported on direct ESXi connections 
 and require vCenter.
 
+* `storage_policy_id` - (Optional) The UUID of the storage policy to assign to VM home directory.
+
 ### CPU and memory options
 
 The following options control CPU and memory settings on the virtual machine:
 
-* `num_cpus` - (Optional) The number of virtual processors to assign to this
-  virtual machine. Default: `1`.
-* `num_cores_per_socket` - (Optional) The number of cores to distribute among
-  the CPUs in this virtual machine. If specified, the value supplied to
-  `num_cpus` must be evenly divisible by this value. Default: `1`.
+* `num_cpus` - (Optional) The total number of virtual processor cores to assign
+  to this virtual machine. Default: `1`.
+* `num_cores_per_socket` - (Optional) The number of cores per socket in this
+  virtual machine. The number of vCPUs on the virtual machine will be
+  `num_cpus` divided by `num_cores_per_socket`. If specified, the value
+  supplied to `num_cpus` must be evenly divisible by this value. Default: `1`.
 * `cpu_hot_add_enabled` - (Optional) Allow CPUs to be added to this virtual
   machine while it is running.
 * `cpu_hot_remove_enabled` - (Optional) Allow CPUs to be removed to this
@@ -654,10 +739,10 @@ amount of memory provisioned for the virtual machine.
   only be used if your version of VMware Tools does not allow the
   [`wait_for_guest_net_timeout`](#wait_for_guest_net_timeout) waiter to be
   used. A value less than 1 disables the waiter. Default: 0.
-* `ignored_guest_ips` - (Optional) List of IP addresses to ignore while waiting
-  for an available IP address using either of the waiters. Any IP addresses in
-  this list will be ignored if they show up so that the waiter will continue to
-  wait for a real IP address. Default: [].
+* `ignored_guest_ips` - (Optional) List of IP addresses and CIDR networks to
+  ignore while waiting for an available IP address using either of the waiters.
+  Any IP addresses in this list will be ignored if they show up so that the
+  waiter will continue to wait for a real IP address. Default: [].
 * `shutdown_wait_timeout` - (Optional) The amount of time, in minutes, to wait
   for a graceful guest shutdown when making necessary updates to the virtual
   machine. If `force_power_off` is set to true, the VM will be force powered-off
@@ -674,11 +759,14 @@ amount of memory provisioned for the virtual machine.
   Terraform manages on this virtual machine. This directly affects the amount
   of disks you can add to the virtual machine and the maximum disk unit number.
   Note that lowering this value does not remove controllers. Default: `1`.
-
-~> **NOTE:** `scsi_controller_count` should only be modified when you will need
-more than 15 disks on a single virtual machine, or in rare cases that require a
-dedicated controller for certain disks. HashiCorp does not support exploiting
-this value to add out-of-band devices.
+* `sata_controller_count` - (Optional) The number of SATA controllers that
+  Terraform manages on this virtual machine. This directly affects the amount
+  of disks you can add to the virtual machine and the maximum disk unit number.
+  Note that lowering this value does not remove controllers. Default: `0`.
+* `ide_controller_count` - (Optional) The number of IDE controllers that
+  Terraform manages on this virtual machine. This directly affects the amount
+  of disks you can add to the virtual machine and the maximum disk unit number.
+  Note that lowering this value does not remove controllers. Default: `2`.
 
 ### Disk options
 
@@ -692,20 +780,20 @@ An abridged multi-disk example is below:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   disk {
     label = "disk0"
     size  = "10"
   }
-  
+
   disk {
     label       = "disk1"
     size        = "100"
     unit_number = 1
   }
 
-  ...
+  # ... other configuration ...
 }
 ```
 
@@ -737,11 +825,11 @@ removed, and the only time this controls path is when attaching a disk
 externally with `attach` when the `path` field is not specified.
 
 * `size` - (Required) The size of the disk, in GB.
-* `unit_number` - (Optional) The disk number on the SCSI bus. The maximum value
-  for this setting is the value of
-  [`scsi_controller_count`](#scsi_controller_count) times 15, minus 1 (so `14`,
-  `29`, `44`, and `59`, for 1-4 controllers respectively). The default is `0`,
-  for which one disk must be set to. Duplicate unit numbers are not allowed.
+* `unit_number` - (Optional) The disk number on the storage bus. The maximum 
+  value for this setting is the value of the controller count times the 
+  controller capacity (15 for SCSI, 30 for SATA, and 2 for IDE). 
+  The default is `0`, for which one disk must be set to. Duplicate unit numbers 
+  are not allowed.
 * `datastore_id` - (Optional) A [managed object reference
   ID][docs-about-morefs] to the datastore for this virtual disk. The default is
   to use the datastore of the virtual machine. See the section on [virtual
@@ -795,6 +883,10 @@ externally with `attach` when the `path` field is not specified.
   be one of `low`, `normal`, `high`, or `custom`. Default: `normal`.
 * `io_share_count` - (Optional) The share count for this disk when the share
   level is `custom`.
+* `storage_policy_id` - (Optional) The UUID of the storage policy to assign to this disk.
+* `controller_type` - (Optional) The type of storage controller to attach the 
+  disk to. Can be `scsi`, `sata`, or `ide`. You must have the appropriate
+  number of controllers enabled for the selected type. Default `scsi`.
 
 #### Computed disk attributes
 
@@ -840,14 +932,14 @@ Given the following example:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   network_interface {
-    network_id   = "${data.vsphere_network.public.id}"
+    network_id = "${data.vsphere_network.public.id}"
   }
 
   network_interface {
-    network_id   = "${data.vsphere_network.private.id}"
+    network_id = "${data.vsphere_network.private.id}"
   }
 }
 ```
@@ -878,6 +970,9 @@ The options are:
   `normal`.
 * `bandwidth_share_count` - (Optional) The share count for this network
   interface when the share level is `custom`.
+* `ovf_mapping` - (Optional) Specifies which OVF NIC the `network_interface`
+  should be associated with. Only applies at creation and only when deploying
+  from an OVF source.
 
 ### CDROM options
 
@@ -889,7 +984,7 @@ An example is below:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   cdrom {
     datastore_id = "${data.vsphere_datastore.iso_datastore.id}"
@@ -904,7 +999,7 @@ The options are:
   remote client device. Conflicts with `datastore_id` and `path`.
 * `datastore_id` - (Optional) The datastore ID that the ISO is located in.
   Requried for using a datastore ISO. Conflicts with `client_device`.
-* `path` - (Optional) The path to the ISO file. Requried for using a datastore
+* `path` - (Optional) The path to the ISO file. Required for using a datastore
   ISO. Conflicts with `client_device`.
 
 ~> **NOTE:** Either `client_device` (for a remote backed CDROM) or `datastore_id`
@@ -966,7 +1061,10 @@ settings.
 
 To perform virtual machine customization as a part of the clone process,
 specify the `customize` block with the respective customization options, nested
-within the `clone` block. See the [cloning and customization
+within the `clone` block. Windows guests are customized using Sysprep, which
+will result in the machine SID being reset. Before using customization, check
+is that your source VM meets the [requirements](https://pubs.vmware.com/vsphere-50/index.jsp?topic=%2Fcom.vmware.vsphere.vm_admin.doc_50%2FGUID-80F3F5B5-F795-45F1-B0FA-3709978113D5.html)
+for guest OS customization on vSphere. See the [cloning and customization
 example](#cloning-and-customization-example) for a usage synopsis.
 
 The settings for `customize` are as follows:
@@ -989,27 +1087,27 @@ Given the following example:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   network_interface {
-    network_id   = "${data.vsphere_network.public.id}"
+    network_id = "${data.vsphere_network.public.id}"
   }
 
   network_interface {
-    network_id   = "${data.vsphere_network.private.id}"
+    network_id = "${data.vsphere_network.private.id}"
   }
 
   clone {
-    ...
+    # ... other configuration ...
 
     customize {
-      ...
+      # ... other configuration ...
 
       network_interface {
         ipv4_address = "10.0.0.10"
         ipv4_netmask = 24
       }
-      
+
       network_interface {
         ipv4_address = "172.16.0.10"
         ipv4_netmask = 24
@@ -1029,21 +1127,21 @@ being configured. So the above example would look like:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   network_interface {
-    network_id   = "${data.vsphere_network.public.id}"
+    network_id = "${data.vsphere_network.public.id}"
   }
 
   network_interface {
-    network_id   = "${data.vsphere_network.private.id}"
+    network_id = "${data.vsphere_network.private.id}"
   }
 
   clone {
-    ...
+    # ... other configuration ...
 
     customize {
-      ...
+      # ... other configuration ...
 
       network_interface {}
 
@@ -1118,13 +1216,13 @@ Example:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   clone {
-    ...
+    # ... other configuration ...
 
     customize {
-      ...
+      # ... other configuration ...
 
       linux_options {
         host_name = "terraform-test"
@@ -1158,13 +1256,13 @@ Example:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   clone {
-    ...
+    # ... other configuration ...
 
     customize {
-      ...
+      # ... other configuration ...
 
       windows_options {
         computer_name  = "terraform-test"
@@ -1226,21 +1324,21 @@ text - keep this in mind when provisioning your infrastructure.
 #### Supplying your own SysPrep file
 
 Alternative to the `windows_options` supplied above, you can instead supply
-your own `sysprep.inf` file contents via the `windows_sysprep_text` option.
+your own `sysprep.xml` file contents via the `windows_sysprep_text` option.
 This allows full control of the customization process out-of-band of vSphere.
 Example below:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   clone {
-    ...
+    # ... other configuration ...
 
     customize {
-      ...
+      # ... other configuration ...
 
-      windows_sysprep_text = "${file("${path.module}/sysprep.inf")}"
+      windows_sysprep_text = "${file("${path.module}/sysprep.xml")}"
     }
   }
 }
@@ -1248,6 +1346,34 @@ resource "vsphere_virtual_machine" "vm" {
 
 Note this option is mutually exclusive to `windows_options` - one must not be
 included if the other is specified.
+
+### Creating VM from deploying a OVF/OVA template
+
+The `ovf_deploy` block can be used to create a new virtual machine from an ovf/ova
+template either from local system or remote URL. While deploying, the VM
+properties are taken from ovf and setting them in configuration file is not necessary.
+
+See the [Deploying from OVF example](#deploying-vm-from-an-ovf-ova-template) for a usage synopsis.
+
+~> **NOTE:** Changing any option in `ovf_deploy` after creation forces a new
+resource.
+
+The options available in the `ovf_deploy` block are:
+
+* `local_ovf_path` - (Optional) The absolute path to the ovf/ova file in the local system. While deploying from ovf,
+   make sure the other necessary files like the .vmdk files are also in the same directory as the given ovf file.
+* `remote_ovf_url` - (Optional) URL to the remote ovf/ova file to be deployed.
+
+~> **NOTE:** Either `local_ovf_path` or `remote_ovf_url` is required, both can't be empty.
+
+* `ip_allocation_policy` - (Optional) The IP allocation policy.
+* `ip_protocol` - (Optional) The IP protocol.
+* `disk_provisioning` - (Optional) The disk provisioning. If set, all the disks in the deployed OVF will have 
+   the same specified disk type (accepted values {thin, flat, thick, sameAsSource}).
+* `ovf_network_map` - (Optional) The mapping of name of network identifiers from the ovf descriptor to network UUID in the 
+   VI infrastructure.
+* `allow_unverified_ssl_cert` - (Optional) Allow unverified ssl certificates while deploying ovf/ova from url.
+   Defaults true.   
 
 ### Using vApp properties to supply OVF/OVA configuration
 
@@ -1268,15 +1394,15 @@ The configuration looks similar to the one below:
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
   clone {
     template_uuid = "${data.vsphere_virtual_machine.template_from_ovf.id}"
   }
 
   vapp {
-    properties {
-      "guestinfo.tf.internal.id" = "42"
+    properties = {
+      guestinfo.tf.internal.id = "42"
     }
   }
 }
@@ -1297,13 +1423,13 @@ both the resource configuration and source template:
 * When using `linked_clone`, the `size`, `thin_provisioned`, and
   `eagerly_scrub` settings for each disk must be an exact match to the
   individual disk's counterpart in the source template.
-* The [`scsi_controller_count`](#scsi_controller_count) setting should be
+* The storage controller count settings should be
   configured as necessary to cover all of the disks on the template. For best
   results, only configure this setting for the amount of controllers you will
   need to cover your disk quantity and bandwidth needs, and configure your
   template accordingly. For most workloads, this setting should be kept at its
-  default of `1`, and all disks in the template should reside on the single,
-  primary controller.
+  default of `1` SCSI controller, and all disks in the template should reside 
+  on the single, primary controller.
 * Some operating systems (such as Windows) do not respond well to a change in
   disk controller type, so when using such OSes, take care to ensure that
   `scsi_type` is set to an exact match of the template's controller set. For
@@ -1362,15 +1488,15 @@ where it is.
 
 ```hcl
 resource "vsphere_virtual_machine" "vm" {
-  ...
+  # ... other configuration ...
 
-  datastore_id     = "${data.vsphere_datastore.vm_datastore.id}"
+  datastore_id = "${data.vsphere_datastore.vm_datastore.id}"
 
   disk {
     label = "disk0"
     size  = 10
   }
-  
+
   disk {
     datastore_id = "${data.vsphere_datastore.pinned_datastore.id}"
     label        = "disk1"
@@ -1378,7 +1504,7 @@ resource "vsphere_virtual_machine" "vm" {
     unit_number  = 1
   }
 
-  ...
+  # ... other configuration ...
 }
 ```
 
@@ -1465,12 +1591,12 @@ In addition to these rules, the following extra rules apply to importing:
   until the first `terraform apply` runs, which will remove the setting for
   known disks. This is an extra safeguard against naming or accounting mistakes
   in the disk configuration.
-* The [`scsi_controller_count`](#scsi_controller_count) for the resource is set
-  to the number of contiguous SCSI controllers found, starting with the SCSI
-  controller at bus number 0. If no SCSI controllers are found, the VM is not
-  eligible for import. To ensure maximum compatibility, make sure your virtual
-  machine has the exact number of SCSI controllers it needs, and set
-  [`scsi_controller_count`](#scsi_controller_count) accordingly.
+* The storage controller count for the resource is set to the number of 
+  contiguous storage controllers found, starting with the controller at bus 
+  number 0. If no storage controllers are found, the VM is not eligible for 
+  import. To ensure maximum compatibility, make sure your virtual machine has
+  the exact number of storage controllers it needs, and set the storage
+   controller counts accordingly.
 
 After importing, you should run `terraform plan`. Unless you have changed
 anything else in configuration that would be causing other attributes to

@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -26,6 +26,48 @@ func TestAccResourceVSphereComputeClusterVMHostRule_basic(t *testing.T) {
 		CheckDestroy: testAccResourceVSphereComputeClusterVMHostRuleExists(false),
 		Steps: []resource.TestStep{
 			{
+				Config: testAccResourceVSphereComputeClusterVMHostRuleConfigAffinity(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereComputeClusterVMHostRuleExists(true),
+					testAccResourceVSphereComputeClusterVMHostRuleMatch(
+						true,
+						false,
+						"terraform-test-cluster-vm-host-rule",
+						"terraform-test-cluster-host-group",
+						"",
+						"terraform-test-cluster-vm-group",
+					),
+				),
+			},
+			{
+				ResourceName:      "vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					cluster, err := testGetComputeCluster(s, "cluster")
+					if err != nil {
+						return "", err
+					}
+
+					rs, ok := s.RootModule().Resources["vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule"]
+					if !ok {
+						return "", errors.New("no resource at address vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule")
+					}
+					name, ok := rs.Primary.Attributes["name"]
+					if !ok {
+						return "", errors.New("vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule has no name attribute")
+					}
+
+					m := make(map[string]string)
+					m["compute_cluster_path"] = cluster.InventoryPath
+					m["name"] = name
+					b, err := json.Marshal(m)
+					if err != nil {
+						return "", err
+					}
+
+					return string(b), nil
+				},
 				Config: testAccResourceVSphereComputeClusterVMHostRuleConfigAffinity(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereComputeClusterVMHostRuleExists(true),
@@ -152,90 +194,21 @@ func TestAccResourceVSphereComputeClusterVMHostRule_updateAffinity(t *testing.T)
 	})
 }
 
-func TestAccResourceVSphereComputeClusterVMHostRule_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereComputeClusterVMHostRulePreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereComputeClusterVMHostRuleExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereComputeClusterVMHostRuleConfigAffinity(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereComputeClusterVMHostRuleExists(true),
-					testAccResourceVSphereComputeClusterVMHostRuleMatch(
-						true,
-						false,
-						"terraform-test-cluster-vm-host-rule",
-						"terraform-test-cluster-host-group",
-						"",
-						"terraform-test-cluster-vm-group",
-					),
-				),
-			},
-			{
-				ResourceName:      "vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					cluster, err := testGetComputeCluster(s, "cluster")
-					if err != nil {
-						return "", err
-					}
-
-					rs, ok := s.RootModule().Resources["vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule"]
-					if !ok {
-						return "", errors.New("no resource at address vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule")
-					}
-					name, ok := rs.Primary.Attributes["name"]
-					if !ok {
-						return "", errors.New("vsphere_compute_cluster_vm_host_rule.cluster_vm_host_rule has no name attribute")
-					}
-
-					m := make(map[string]string)
-					m["compute_cluster_path"] = cluster.InventoryPath
-					m["name"] = name
-					b, err := json.Marshal(m)
-					if err != nil {
-						return "", err
-					}
-
-					return string(b), nil
-				},
-				Config: testAccResourceVSphereComputeClusterVMHostRuleConfigAffinity(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereComputeClusterVMHostRuleExists(true),
-					testAccResourceVSphereComputeClusterVMHostRuleMatch(
-						true,
-						false,
-						"terraform-test-cluster-vm-host-rule",
-						"terraform-test-cluster-host-group",
-						"",
-						"terraform-test-cluster-vm-group",
-					),
-				),
-			},
-		},
-	})
-}
-
 func testAccResourceVSphereComputeClusterVMHostRulePreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_compute_cluster_vm_host_rule acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_compute_cluster_vm_host_rule acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST4") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST4 to run vsphere_compute_cluster_vm_host_rule acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI1") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI1 to run vsphere_compute_cluster_vm_host_rule acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST5") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST5 to run vsphere_compute_cluster_vm_host_rule acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI2 to run vsphere_compute_cluster_vm_host_rule acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DATASTORE") == "" {
-		t.Skip("set VSPHERE_DATASTORE to run vsphere_compute_cluster_vm_host_rule acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NFS_DS_NAME to run vsphere_compute_cluster_vm_host_rule acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NETWORK_LABEL_PXE") == "" {
-		t.Skip("set VSPHERE_NETWORK_LABEL_PXE to run vsphere_compute_cluster_vm_host_rule acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_PG_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_PG_NAME to run vsphere_compute_cluster_vm_host_rule acceptance tests")
 	}
 }
 
@@ -401,11 +374,11 @@ resource "vsphere_compute_cluster_vm_host_rule" "cluster_vm_host_rule" {
   affinity_host_group_name = "${vsphere_compute_cluster_host_group.cluster_host_group.name}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST4"),
-		os.Getenv("VSPHERE_ESXI_HOST5"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }
 
@@ -498,11 +471,11 @@ resource "vsphere_compute_cluster_vm_host_rule" "cluster_vm_host_rule" {
   anti_affinity_host_group_name = "${vsphere_compute_cluster_host_group.cluster_host_group.name}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST4"),
-		os.Getenv("VSPHERE_ESXI_HOST5"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }
 
@@ -596,10 +569,10 @@ resource "vsphere_compute_cluster_vm_host_rule" "cluster_vm_host_rule" {
   enabled                  = false
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST4"),
-		os.Getenv("VSPHERE_ESXI_HOST5"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }

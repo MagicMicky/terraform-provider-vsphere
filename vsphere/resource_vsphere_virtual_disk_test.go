@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	"context"
-	"github.com/hashicorp/terraform/helper/acctest"
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
+
+	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 	"github.com/vmware/govmomi/find"
 )
 
@@ -43,6 +44,11 @@ func TestAccResourceVSphereVirtualDisk_multi(t *testing.T) {
 			testAccResourceVSphereVirtualDiskPreCheck(t)
 		},
 		Providers: testAccProviders,
+		CheckDestroy: resource.ComposeTestCheckFunc(
+			testAccVSphereVirtualDiskExists("vsphere_virtual_disk.foo.0", false),
+			testAccVSphereVirtualDiskExists("vsphere_virtual_disk.foo.1", false),
+			testAccVSphereVirtualDiskExists("vsphere_virtual_disk.foo.2", false),
+		),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckVSphereVirtuaDiskConfig_multi(rString),
@@ -65,6 +71,11 @@ func TestAccResourceVSphereVirtualDisk_multiWithParent(t *testing.T) {
 			testAccResourceVSphereVirtualDiskPreCheck(t)
 		},
 		Providers: testAccProviders,
+		CheckDestroy: resource.ComposeTestCheckFunc(
+			testAccVSphereVirtualDiskExists("vsphere_virtual_disk.foo.0", false),
+			testAccVSphereVirtualDiskExists("vsphere_virtual_disk.foo.1", false),
+			testAccVSphereVirtualDiskExists("vsphere_virtual_disk.foo.2", false),
+		),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccCheckVSphereVirtuaDiskConfig_multiWithParent(rString),
@@ -100,11 +111,11 @@ func TestAccResourceVSphereVirtualDisk_withParent(t *testing.T) {
 }
 
 func testAccResourceVSphereVirtualDiskPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_virtual_disk acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_virtual_disk acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DATASTORE") == "" {
-		t.Skip("set VSPHERE_DATASTORE to run vsphere_virtual_disk acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NFS_DS_NAME to run vsphere_virtual_disk acceptance tests")
 	}
 }
 
@@ -186,8 +197,8 @@ resource "vsphere_virtual_disk" "foo" {
   datastore    = "${data.vsphere_datastore.ds.name}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
 		rName,
 	)
 }
@@ -225,8 +236,8 @@ resource "vsphere_virtual_disk" "foo" {
   datastore    = "${data.vsphere_datastore.ds.name}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
 		rName,
 	)
 }
@@ -265,8 +276,8 @@ resource "vsphere_virtual_disk" "foo" {
   create_directories = true
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
 		rName,
 	)
 }
@@ -304,8 +315,8 @@ resource "vsphere_virtual_disk" "foo" {
   create_directories = true
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
 		rName,
 	)
 }

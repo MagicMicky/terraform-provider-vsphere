@@ -9,7 +9,8 @@ import (
 	"path"
 
 	"context"
-	"github.com/hashicorp/terraform/helper/schema"
+
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -50,6 +51,12 @@ func resourceVSphereVirtualDisk() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 				ForceNew: true,
+				ValidateFunc: func(v interface{}, k string) (warns []string, errors []error) {
+					if !strings.HasSuffix(v.(string), ".vmdk") {
+						errors = append(errors, fmt.Errorf("vmdk_path must end with '.vmdk'"))
+					}
+					return
+				},
 			},
 
 			"datastore": {

@@ -6,9 +6,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 )
 
 func TestAccResourceVSphereVAppEntity_basic(t *testing.T) {
@@ -17,7 +17,8 @@ func TestAccResourceVSphereVAppEntity_basic(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppEntityPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppEntityCheckExists("vapp_entity", false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppEntityConfigBasic(),
@@ -31,6 +32,11 @@ func TestAccResourceVSphereVAppEntity_basic(t *testing.T) {
 					testAccResourceVSphereVAppEntityWaitForGuest("vapp_entity", false),
 				),
 			},
+			{
+				ResourceName:      "vsphere_vapp_entity.vapp_entity",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -41,7 +47,8 @@ func TestAccResourceVSphereVAppEntity_nonDefault(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppEntityPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppEntityCheckExists("vapp_entity", false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppEntityConfigNonDefault(),
@@ -65,7 +72,8 @@ func TestAccResourceVSphereVAppEntity_update(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppEntityPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppEntityCheckExists("vapp_entity", false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppEntityConfigBasic(),
@@ -102,6 +110,10 @@ func TestAccResourceVSphereVAppEntity_multi(t *testing.T) {
 			testAccResourceVSphereVAppEntityPreCheck(t)
 		},
 		Providers: testAccProviders,
+		CheckDestroy: resource.ComposeTestCheckFunc(
+			testAccResourceVSphereVAppEntityCheckExists("vapp_entity1", false),
+			testAccResourceVSphereVAppEntityCheckExists("vapp_entity2", false),
+		),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppEntityConfigMultipleNonDefault(),
@@ -133,7 +145,10 @@ func TestAccResourceVSphereVAppEntity_multiUpdate(t *testing.T) {
 			testAccResourceVSphereVAppEntityPreCheck(t)
 		},
 		Providers: testAccProviders,
-		Steps: []resource.TestStep{
+		CheckDestroy: resource.ComposeTestCheckFunc(
+			testAccResourceVSphereVAppEntityCheckExists("vapp_entity1", false),
+			testAccResourceVSphereVAppEntityCheckExists("vapp_entity2", false),
+		), Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppEntityConfigMultipleDefault(),
 				Check: resource.ComposeTestCheckFunc(
@@ -176,53 +191,21 @@ func TestAccResourceVSphereVAppEntity_multiUpdate(t *testing.T) {
 	})
 }
 
-func TestAccResourceVSphereVAppEntity_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereVAppEntityPreCheck(t)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereVAppEntityConfigBasic(),
-				Check:  resource.ComposeTestCheckFunc(),
-			},
-			{
-				ResourceName:      "vsphere_vapp_entity.vapp_entity",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					vars, err := testClientVariablesForResource(s, fmt.Sprintf("%s.%s", resourceVSphereVAppEntityName, "vapp_entity"))
-					if err != nil {
-						return "", err
-					}
-					return vars.resourceID, nil
-				},
-				Config: testAccResourceVSphereVAppEntityConfigBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereVAppEntityCheckExists("vapp_entity", true),
-				),
-			},
-		},
-	})
-}
-
 func testAccResourceVSphereVAppEntityPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_vapp_entity acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_vapp_entity acceptance tests")
 	}
-	if os.Getenv("VSPHERE_CLUSTER") == "" {
-		t.Skip("set VSPHERE_CLUSTER to run vsphere_vapp_entity acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_CLUSTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_CLUSTER to run vsphere_vapp_entity acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST5") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST5 to run vsphere_vapp_entity acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI2 to run vsphere_vapp_entity acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NETWORK_LABEL_PXE") == "" {
-		t.Skip("set VSPHERE_NETWORK_LABEL_PXE to run vsphere_vapp_entity acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_PG_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_PG_NAME to run vsphere_vapp_entity acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DATASTORE") == "" {
-		t.Skip("set VSPHERE_DATASTORE to run vsphere_vapp_entity acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NFS_DS_NAME to run vsphere_vapp_entity acceptance tests")
 	}
 }
 
@@ -401,10 +384,10 @@ resource "vsphere_virtual_machine" "vm" {
 	}
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }
 
@@ -493,10 +476,10 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }
 
@@ -604,10 +587,10 @@ resource "vsphere_virtual_machine" "vm2" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }
 func testAccResourceVSphereVAppEntityConfigMultipleNonDefault() string {
@@ -726,9 +709,9 @@ resource "vsphere_virtual_machine" "vm2" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }

@@ -1,4 +1,5 @@
 ---
+subcategory: "Inventory"
 layout: "vsphere"
 page_title: "VMware vSphere: vsphere_custom_attribute"
 sidebar_current: "docs-vsphere-resource-inventory-custom-attribute"
@@ -50,7 +51,7 @@ resource "vsphere_custom_attribute" "attribute" {
 }
 
 resource "vpshere_virtual_machine" "web" {
-  ...
+  # ... other configuration ...
 
   custom_attributes = "${map(vsphere_custom_attribute.attribute.id, "value")}"
 }

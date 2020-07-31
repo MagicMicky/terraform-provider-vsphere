@@ -8,15 +8,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/helper/validation"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/dvportgroup"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/network"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/nsx"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/mitchellh/copystructure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/dvportgroup"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/network"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/nsx"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/provider"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
@@ -103,6 +103,12 @@ func NetworkInterfaceSubresourceSchema() map[string]*schema.Schema {
 			Optional:    true,
 			Computed:    true,
 			Description: "The MAC address of this network interface. Can only be manually set if use_static_mac is true.",
+		},
+		"ovf_mapping": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			ForceNew:    true,
+			Description: "Mapping of network interface to OVF network.",
 		},
 	}
 	structure.MergeSchema(s, subresourceSchema())
@@ -474,7 +480,11 @@ func NetworkInterfacePostCloneOperation(d *schema.ResourceData, c *govmomi.Clien
 	// Any other device past the end of the network devices listed in config needs to be removed.
 	if len(curSet) < len(srcSet) {
 		for i, si := range srcSet[len(curSet):] {
-			sm := si.(map[string]interface{})
+			sm, ok := si.(map[string]interface{})
+			if !ok {
+				log.Printf("[DEBUG] Extra entry in NIC source list, but not of expected type")
+				continue
+			}
 			r := NewNetworkInterfaceSubresource(c, d, sm, nil, i+len(curSet))
 			dspec, err := r.Delete(l)
 			if err != nil {

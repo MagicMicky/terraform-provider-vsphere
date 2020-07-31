@@ -7,11 +7,11 @@ import (
 	"path"
 	"strings"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/helper/validation"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -68,7 +68,7 @@ func resourceVSphereFolder() *schema.Resource {
 
 func resourceVSphereFolderCreate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*VSphereClient).vimClient
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func resourceVSphereFolderRead(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Read tags if we have the ability to do so
-	if tagsClient, _ := meta.(*VSphereClient).TagsClient(); tagsClient != nil {
+	if tagsClient, _ := meta.(*VSphereClient).TagsManager(); tagsClient != nil {
 		if err := readTagsForResource(tagsClient, fo, d); err != nil {
 			return fmt.Errorf("error reading tags: %s", err)
 		}
@@ -189,7 +189,7 @@ func resourceVSphereFolderRead(d *schema.ResourceData, meta interface{}) error {
 
 func resourceVSphereFolderUpdate(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*VSphereClient).vimClient
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}

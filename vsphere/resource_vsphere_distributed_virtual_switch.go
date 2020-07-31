@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -55,7 +55,7 @@ func resourceVSphereDistributedVirtualSwitchCreate(d *schema.ResourceData, meta 
 	if err := viapi.ValidateVirtualCenter(client); err != nil {
 		return err
 	}
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func resourceVSphereDistributedVirtualSwitchRead(d *schema.ResourceData, meta in
 	}
 
 	// Read tags if we have the ability to do so
-	if tagsClient, _ := meta.(*VSphereClient).TagsClient(); tagsClient != nil {
+	if tagsClient, _ := meta.(*VSphereClient).TagsManager(); tagsClient != nil {
 		if err := readTagsForResource(tagsClient, dvs, d); err != nil {
 			return fmt.Errorf("error reading tags: %s", err)
 		}
@@ -179,7 +179,7 @@ func resourceVSphereDistributedVirtualSwitchUpdate(d *schema.ResourceData, meta 
 	if err := viapi.ValidateVirtualCenter(client); err != nil {
 		return err
 	}
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}

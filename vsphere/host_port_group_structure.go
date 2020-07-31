@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/helper/validation"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -86,7 +86,7 @@ func calculateComputedPolicy(policy types.HostNetworkPolicy) (map[string]string,
 }
 
 // calculatePorts is a utility function that returns a set of port data.
-func calculatePorts(ports []types.HostPortGroupPort) *schema.Set {
+func calculatePorts(ports []types.HostPortGroupPort) *[]interface{} {
 	s := make([]interface{}, 0)
 	for _, port := range ports {
 		m := make(map[string]interface{})
@@ -95,7 +95,7 @@ func calculatePorts(ports []types.HostPortGroupPort) *schema.Set {
 		m["type"] = port.Type
 		s = append(s, m)
 	}
-	return schema.NewSet(schema.HashResource(portGroupPortSchema()), s)
+	return &s
 }
 
 // portGroupPortSchema returns a sub-schema for a port group's connected ports.

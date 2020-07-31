@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/helper/validation"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/datastore"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/resourcepool"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/virtualdevice"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/datastore"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/hostsystem"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/resourcepool"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/virtualdevice"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -47,6 +47,18 @@ func VirtualMachineCloneSchema() map[string]*schema.Schema {
 			MaxItems:    1,
 			Description: "The customization spec for this clone. This allows the user to configure the virtual machine post-clone.",
 			Elem:        &schema.Resource{Schema: VirtualMachineCustomizeSchema()},
+		},
+		"ovf_network_map": {
+			Type:        schema.TypeMap,
+			Optional:    true,
+			Description: "Mapping of ovf networks to the networks to use in vSphere.",
+			Elem:        &schema.Schema{Type: schema.TypeString},
+		},
+		"ovf_storage_map": {
+			Type:        schema.TypeMap,
+			Optional:    true,
+			Description: "Mapping of ovf storage to the datastores to use in vSphere.",
+			Elem:        &schema.Schema{Type: schema.TypeString},
 		},
 	}
 }

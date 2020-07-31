@@ -6,11 +6,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/vappcontainer"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/vappcontainer"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 )
 
 func TestAccResourceVSphereVAppContainer_basic(t *testing.T) {
@@ -19,7 +19,8 @@ func TestAccResourceVSphereVAppContainer_basic(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppContainerPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppContainerConfigBasic(),
@@ -39,31 +40,6 @@ func TestAccResourceVSphereVAppContainer_basic(t *testing.T) {
 					testAccResourceVSphereVAppContainerCheckMemoryShares(10),
 				),
 			},
-		},
-	})
-}
-
-func TestAccResourceVSphereVAppContainer_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereVAppContainerPreCheck(t)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereVAppContainerConfigBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereVAppContainerCheckExists(true),
-					testAccResourceVSphereVAppContainerCheckFolder("parent_folder"),
-				),
-			},
-			{
-				Config: testAccResourceVSphereVAppContainerConfigBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereVAppContainerCheckExists(true),
-				),
-			},
 			{
 				ResourceName:      "vsphere_vapp_container.vapp_container",
 				ImportState:       true,
@@ -74,8 +50,8 @@ func TestAccResourceVSphereVAppContainer_import(t *testing.T) {
 						return "", err
 					}
 					return fmt.Sprintf("/%s/host/%s/Resources/resource-pool-parent/%s",
-						os.Getenv("VSPHERE_DATACENTER"),
-						os.Getenv("VSPHERE_CLUSTER"),
+						os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+						os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
 						vc.Name(),
 					), nil
 				},
@@ -88,13 +64,53 @@ func TestAccResourceVSphereVAppContainer_import(t *testing.T) {
 	})
 }
 
+func TestAccResourceVSphereVAppContainer_childImport(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccResourceVSphereVAppContainerPreCheck(t)
+		},
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExistsInner("child", false),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccResourceVSphereVAppContainerConfigChildImport(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereVAppContainerCheckExistsInner("parent", true),
+				),
+			},
+			{
+				ResourceName:      "vsphere_vapp_container.child",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					vc, err := testGetVAppContainer(s, "child")
+					if err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("/%s/host/%s/Resources/parentVApp/%s",
+						os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+						os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+						vc.Name(),
+					), nil
+				},
+				Config: testAccResourceVSphereVAppContainerConfigChildImport(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereVAppContainerCheckExistsInner("child", true),
+				),
+			},
+		},
+	})
+}
+
 func TestAccResourceVSphereVAppContainer_vmBasic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppContainerPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppContainerConfigVM(),
@@ -113,7 +129,8 @@ func TestAccResourceVSphereVAppContainer_vmMoveIntoVApp(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppContainerPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppContainerConfigVMOutsideVApp(),
@@ -138,7 +155,8 @@ func TestAccResourceVSphereVAppContainer_vmSDRS(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppContainerPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppContainerConfigVmSdrs(),
@@ -157,7 +175,8 @@ func TestAccResourceVSphereVAppContainer_vmClone(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppContainerPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppContainerConfigVmClone(),
@@ -176,7 +195,8 @@ func TestAccResourceVSphereVAppContainer_vmCloneSDRS(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppContainerPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppContainerConfigVmSdrsClone(),
@@ -195,7 +215,8 @@ func TestAccResourceVSphereVAppContainer_vmMoveIntoVAppSDRS(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVAppContainerPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVAppContainerCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVAppContainerConfigVmSdrsNoVApp(),
@@ -216,29 +237,33 @@ func TestAccResourceVSphereVAppContainer_vmMoveIntoVAppSDRS(t *testing.T) {
 }
 
 func testAccResourceVSphereVAppContainerPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_vapp_container acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_vapp_container acceptance tests")
 	}
-	if os.Getenv("VSPHERE_CLUSTER") == "" {
-		t.Skip("set VSPHERE_CLUSTER to run vsphere_vapp_container acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_CLUSTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_CLUSTER to run vsphere_vapp_container acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NETWORK_LABEL_PXE") == "" {
-		t.Skip("set VSPHERE_NETWORK_LABEL_PXE to run vsphere_vapp_container acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_PG_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_PG_NAME to run vsphere_vapp_container acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DATASTORE") == "" {
-		t.Skip("set VSPHERE_DATASTORE to run vsphere_vapp_container acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NFS_DS_NAME to run vsphere_vapp_container acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NFS_PATH") == "" {
-		t.Skip("set VSPHERE_NFS_PATH to run vsphere_vapp_container acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_PATH") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NFS_PATH to run vsphere_vapp_container acceptance tests")
 	}
-	if os.Getenv("VSPHERE_TEMPLATE") == "" {
-		t.Skip("set VSPHERE_TEMPLATE to run vsphere_vapp_container acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_TEMPLATE") == "" {
+		t.Skip("set TF_VAR_VSPHERE_TEMPLATE to run vsphere_vapp_container acceptance tests")
 	}
 }
 
 func testAccResourceVSphereVAppContainerCheckExists(expected bool) resource.TestCheckFunc {
+	return testAccResourceVSphereVAppContainerCheckExistsInner("vapp_container", expected)
+}
+
+func testAccResourceVSphereVAppContainerCheckExistsInner(containerName string, expected bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		_, err := testGetVAppContainer(s, "vapp_container")
+		_, err := testGetVAppContainer(s, containerName)
 		if err != nil {
 			if viapi.IsManagedObjectNotFoundError(err) && expected == false {
 				// Expected missing
@@ -476,9 +501,9 @@ resource "vsphere_vapp_container" "vapp_container" {
   memory_limit            = 20
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
 	)
 }
 
@@ -506,9 +531,9 @@ variable "network_label" {
 
 variable "hosts" {
   default = [
-    "n-esxi1.vsphere.hashicorptest.internal",
-    "n-esxi2.vsphere.hashicorptest.internal",
-    "n-esxi3.vsphere.hashicorptest.internal",
+    "%s",
+    "%s",
+    "%s",
   ]
 }
 
@@ -586,11 +611,14 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_NFS_PATH"),
-		os.Getenv("VSPHERE_NAS_HOST"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_PATH"),
+		os.Getenv("TF_VAR_VSPHERE_NAS_HOST"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST3"),
 	)
 }
 
@@ -618,9 +646,9 @@ variable "network_label" {
 
 variable "hosts" {
   default = [
-    "n-esxi1.vsphere.hashicorptest.internal",
-    "n-esxi2.vsphere.hashicorptest.internal",
-    "n-esxi3.vsphere.hashicorptest.internal",
+    "%s",
+    "%s",
+    "%s",
   ]
 }
 
@@ -698,11 +726,14 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_NFS_PATH"),
-		os.Getenv("VSPHERE_NAS_HOST"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_PATH"),
+		os.Getenv("TF_VAR_VSPHERE_NAS_HOST"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST3"),
 	)
 }
 
@@ -730,9 +761,9 @@ variable "network_label" {
 
 variable "hosts" {
   default = [
-    "n-esxi1.vsphere.hashicorptest.internal",
-    "n-esxi2.vsphere.hashicorptest.internal",
-    "n-esxi3.vsphere.hashicorptest.internal",
+    "%s",
+    "%s",
+    "%s",
   ]
 }
 
@@ -823,12 +854,15 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_NFS_PATH"),
-		os.Getenv("VSPHERE_NAS_HOST"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
-		os.Getenv("VSPHERE_TEMPLATE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_PATH"),
+		os.Getenv("TF_VAR_VSPHERE_NAS_HOST"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST3"),
+		os.Getenv("TF_VAR_VSPHERE_TEMPLATE"),
 	)
 }
 
@@ -912,7 +946,7 @@ resource "vsphere_virtual_machine" "vm" {
 
   disk {
     label = "disk0"
-    size  = "32"
+    size  = "%s"
   }
 
   network_interface {
@@ -920,11 +954,12 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
-		os.Getenv("VSPHERE_TEMPLATE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_TEMPLATE"),
+		os.Getenv("TF_VAR_VSPHERE_CLONED_VM_DISK_SIZE"),
 	)
 }
 
@@ -1002,10 +1037,10 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }
 
@@ -1083,9 +1118,41 @@ resource "vsphere_virtual_machine" "vm" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
+	)
+}
+
+func testAccResourceVSphereVAppContainerConfigChildImport() string {
+	return fmt.Sprintf(`
+data "vsphere_datacenter" "dc" {
+  name = "%s"
+}
+
+data "vsphere_compute_cluster" "cluster" {
+  name          = "%s"
+  datacenter_id = data.vsphere_datacenter.dc.id
+}
+
+resource "vsphere_folder" "parent_folder" {
+  path          = "terraform-test-parent-folder"
+  type          = "vm"
+  datacenter_id = "${data.vsphere_datacenter.dc.id}"
+}
+
+resource "vsphere_vapp_container" "parent" {
+  name                    = "parentVApp"
+  parent_resource_pool_id = data.vsphere_compute_cluster.cluster.resource_pool_id
+  parent_folder_id        = vsphere_folder.parent_folder.id
+}
+
+resource "vsphere_vapp_container" "child" {
+  name                    = "childVApp"
+  parent_resource_pool_id = vsphere_vapp_container.parent.id
+}`,
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
 	)
 }

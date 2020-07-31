@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/datastore"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/datastore"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -97,7 +97,7 @@ func resourceVSphereVmfsDatastoreCreate(d *schema.ResourceData, meta interface{}
 
 	// Load up the tags client, which will validate a proper vCenter before
 	// attempting to proceed if we have tags defined.
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func resourceVSphereVmfsDatastoreRead(d *schema.ResourceData, meta interface{}) 
 	}
 
 	// Read tags if we have the ability to do so
-	if tagsClient, _ := meta.(*VSphereClient).TagsClient(); tagsClient != nil {
+	if tagsClient, _ := meta.(*VSphereClient).TagsManager(); tagsClient != nil {
 		if err := readTagsForResource(tagsClient, ds, d); err != nil {
 			return err
 		}
@@ -239,7 +239,7 @@ func resourceVSphereVmfsDatastoreUpdate(d *schema.ResourceData, meta interface{}
 
 	// Load up the tags client, which will validate a proper vCenter before
 	// attempting to proceed if we have tags defined.
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}

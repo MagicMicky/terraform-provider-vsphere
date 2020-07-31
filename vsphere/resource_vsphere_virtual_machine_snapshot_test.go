@@ -6,9 +6,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
 )
 
 func TestAccResourceVSphereVirtualMachineSnapshot_basic(t *testing.T) {
@@ -17,12 +17,13 @@ func TestAccResourceVSphereVirtualMachineSnapshot_basic(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVirtualMachineSnapshotPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckVirtualMachineSnapshotExists("vsphere_virtual_machine_snapshot.snapshot", false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereVirtualMachineSnapshotConfig(true),
 				Check: resource.ComposeTestCheckFunc(
-					testAccCheckVirtualMachineSnapshotExists("vsphere_virtual_machine_snapshot.snapshot"),
+					testAccCheckVirtualMachineSnapshotExists("vsphere_virtual_machine_snapshot.snapshot", true),
 					resource.TestCheckResourceAttr(
 						"vsphere_virtual_machine_snapshot.snapshot", "snapshot_name", "terraform-test-snapshot"),
 				),
@@ -38,57 +39,70 @@ func TestAccResourceVSphereVirtualMachineSnapshot_basic(t *testing.T) {
 }
 
 func testAccResourceVSphereVirtualMachineSnapshotPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_CLUSTER") == "" {
-		t.Skip("set VSPHERE_CLUSTER to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_CLUSTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_CLUSTER to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_RESOURCE_POOL") == "" {
-		t.Skip("set VSPHERE_RESOURCE_POOL to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_RESOURCE_POOL") == "" {
+		t.Skip("set TF_VAR_VSPHERE_RESOURCE_POOL to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NETWORK_LABEL") == "" {
-		t.Skip("set VSPHERE_NETWORK_LABEL to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NETWORK_LABEL") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NETWORK_LABEL to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_IPV4_ADDRESS") == "" {
-		t.Skip("set VSPHERE_IPV4_ADDRESS to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_IPV4_ADDRESS") == "" {
+		t.Skip("set TF_VAR_VSPHERE_IPV4_ADDRESS to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_IPV4_PREFIX") == "" {
-		t.Skip("set VSPHERE_IPV4_PREFIX to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_IPV4_PREFIX") == "" {
+		t.Skip("set TF_VAR_VSPHERE_IPV4_PREFIX to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_IPV4_GATEWAY") == "" {
-		t.Skip("set VSPHERE_IPV4_GATEWAY to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_IPV4_GATEWAY") == "" {
+		t.Skip("set TF_VAR_VSPHERE_IPV4_GATEWAY to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DATASTORE") == "" {
-		t.Skip("set VSPHERE_DATASTORE to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NFS_DS_NAME to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
-	if os.Getenv("VSPHERE_TEMPLATE") == "" {
-		t.Skip("set VSPHERE_TEMPLATE to run vsphere_virtual_machine_snapshot acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_TEMPLATE") == "" {
+		t.Skip("set TF_VAR_VSPHERE_TEMPLATE to run vsphere_virtual_machine_snapshot acceptance tests")
 	}
 }
 
-func testAccCheckVirtualMachineSnapshotExists(n string) resource.TestCheckFunc {
+func snapshotExists(n string, s *terraform.State) (bool, error) {
+	rs, ok := s.RootModule().Resources[n]
+
+	if !ok {
+		return false, nil
+	}
+
+	if rs.Primary.ID == "" {
+		return false, fmt.Errorf("No Vm Snapshot ID is set")
+	}
+	client := testAccProvider.Meta().(*VSphereClient).vimClient
+
+	vm, err := virtualmachine.FromUUID(client, rs.Primary.Attributes["virtual_machine_uuid"])
+	if err != nil {
+		return false, fmt.Errorf("error %s", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout) // This is 5 mins
+	defer cancel()
+	snapshot, err := vm.FindSnapshot(ctx, rs.Primary.ID)
+	if err != nil {
+		return false, fmt.Errorf("Error while getting the snapshot %v", snapshot)
+	}
+
+	return true, nil
+
+}
+
+func testAccCheckVirtualMachineSnapshotExists(n string, exists bool) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
-		rs, ok := s.RootModule().Resources[n]
-
-		if !ok {
-			return fmt.Errorf("Not found: %s", n)
-		}
-
-		if rs.Primary.ID == "" {
-			return fmt.Errorf("No Vm Snapshot ID is set")
-		}
-		client := testAccProvider.Meta().(*VSphereClient).vimClient
-
-		vm, err := virtualmachine.FromUUID(client, rs.Primary.Attributes["virtual_machine_uuid"])
+		found, err := snapshotExists(n, s)
 		if err != nil {
-			return fmt.Errorf("error %s", err)
+			return err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), defaultAPITimeout) // This is 5 mins
-		defer cancel()
-		snapshot, err := vm.FindSnapshot(ctx, rs.Primary.ID)
-		if err != nil {
-			return fmt.Errorf("Error while getting the snapshot %v", snapshot)
+		if found != exists {
+			return fmt.Errorf("Snapshot exists error. expected state: %t, actual state: %t", exists, found)
 		}
 
 		return nil
@@ -234,14 +248,14 @@ resource "vsphere_virtual_machine_snapshot" "snapshot" {
   quiesce              = true
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_RESOURCE_POOL"),
-		os.Getenv("VSPHERE_NETWORK_LABEL"),
-		os.Getenv("VSPHERE_IPV4_ADDRESS"),
-		os.Getenv("VSPHERE_IPV4_PREFIX"),
-		os.Getenv("VSPHERE_IPV4_GATEWAY"),
-		os.Getenv("VSPHERE_DATASTORE"),
-		os.Getenv("VSPHERE_TEMPLATE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_RESOURCE_POOL"),
+		os.Getenv("TF_VAR_VSPHERE_NETWORK_LABEL"),
+		os.Getenv("TF_VAR_VSPHERE_IPV4_ADDRESS"),
+		os.Getenv("TF_VAR_VSPHERE_IPV4_PREFIX"),
+		os.Getenv("TF_VAR_VSPHERE_IPV4_GATEWAY"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_TEMPLATE"),
 		enabled,
 	)
 }

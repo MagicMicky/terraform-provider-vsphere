@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/virtualdevice"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/virtualdevice"
 	"github.com/vmware/govmomi/object"
 )
 
@@ -30,6 +30,18 @@ func dataSourceVSphereVirtualMachine() *schema.Resource {
 				Description: "The number of SCSI controllers to scan for disk sizes and controller types on.",
 				Optional:    true,
 				Default:     1,
+			},
+			"sata_controller_scan_count": {
+				Type:        schema.TypeInt,
+				Description: "The number of SATA controllers to scan for disk sizes and controller types on.",
+				Optional:    true,
+				Default:     0,
+			},
+			"ide_controller_scan_count": {
+				Type:        schema.TypeInt,
+				Description: "The number of IDE controllers to scan for disk sizes and controller types on.",
+				Optional:    true,
+				Default:     2,
 			},
 			"guest_id": {
 				Type:        schema.TypeString,
@@ -83,6 +95,12 @@ func dataSourceVSphereVirtualMachine() *schema.Resource {
 				Computed:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 			},
+			"guest_ip_addresses": {
+				Type:        schema.TypeList,
+				Description: "The current list of IP addresses on this virtual machine.",
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+			},
 		},
 	}
 }
@@ -124,7 +142,7 @@ func dataSourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{
 	d.Set("scsi_type", virtualdevice.ReadSCSIBusType(object.VirtualDeviceList(props.Config.Hardware.Device), d.Get("scsi_controller_scan_count").(int)))
 	d.Set("scsi_bus_sharing", virtualdevice.ReadSCSIBusSharing(object.VirtualDeviceList(props.Config.Hardware.Device), d.Get("scsi_controller_scan_count").(int)))
 	d.Set("firmware", props.Config.Firmware)
-	disks, err := virtualdevice.ReadDiskAttrsForDataSource(object.VirtualDeviceList(props.Config.Hardware.Device), d.Get("scsi_controller_scan_count").(int))
+	disks, err := virtualdevice.ReadDiskAttrsForDataSource(object.VirtualDeviceList(props.Config.Hardware.Device), d)
 	if err != nil {
 		return fmt.Errorf("error reading disk sizes: %s", err)
 	}
@@ -132,11 +150,16 @@ func dataSourceVSphereVirtualMachineRead(d *schema.ResourceData, meta interface{
 	if err != nil {
 		return fmt.Errorf("error reading network interface types: %s", err)
 	}
-	if d.Set("disks", disks); err != nil {
+	if err := d.Set("disks", disks); err != nil {
 		return fmt.Errorf("error setting disk sizes: %s", err)
 	}
-	if d.Set("network_interface_types", nics); err != nil {
+	if err := d.Set("network_interface_types", nics); err != nil {
 		return fmt.Errorf("error setting network interface types: %s", err)
+	}
+	if props.Guest != nil {
+		if err := buildAndSelectGuestIPs(d, *props.Guest); err != nil {
+			return fmt.Errorf("error setting guest IP addresses: %s", err)
+		}
 	}
 	log.Printf("[DEBUG] VM search for %q completed successfully (UUID %q)", name, props.Config.Uuid)
 	return nil

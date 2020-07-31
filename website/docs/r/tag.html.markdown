@@ -1,4 +1,5 @@
 ---
+subcategory: "Inventory"
 layout: "vsphere"
 page_title: "VMware vSphere: vsphere_tag"
 sidebar_current: "docs-vsphere-resource-inventory-tag-resource"
@@ -79,7 +80,7 @@ resource "vsphere_tag" "tag" {
 }
 
 resource "vsphere_virtual_machine" "web" {
-  ...
+  # ... other configuration ...
 
   tags = ["${vsphere_tag.tag.id}"]
 }

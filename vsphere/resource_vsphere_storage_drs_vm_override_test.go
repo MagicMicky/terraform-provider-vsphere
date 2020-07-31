@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -26,6 +26,36 @@ func TestAccResourceVSphereStorageDrsVMOverride_basic(t *testing.T) {
 		CheckDestroy: testAccResourceVSphereStorageDrsVMOverrideExists(false),
 		Steps: []resource.TestStep{
 			{
+				Config: testAccResourceVSphereStorageDrsVMOverrideConfigBasic(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereStorageDrsVMOverrideExists(true),
+					testAccResourceVSphereStorageDrsVMOverrideMatch("", structure.BoolPtr(false), nil),
+				),
+			},
+			{
+				ResourceName:      "vsphere_storage_drs_vm_override.drs_vm_override",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					pod, err := testGetDatastoreCluster(s, "datastore_cluster")
+					if err != nil {
+						return "", err
+					}
+					vm, err := testGetVirtualMachine(s, "vm")
+					if err != nil {
+						return "", err
+					}
+
+					m := make(map[string]string)
+					m["datastore_cluster_path"] = pod.InventoryPath
+					m["virtual_machine_path"] = vm.InventoryPath
+					b, err := json.Marshal(m)
+					if err != nil {
+						return "", err
+					}
+
+					return string(b), nil
+				},
 				Config: testAccResourceVSphereStorageDrsVMOverrideConfigBasic(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereStorageDrsVMOverrideExists(true),
@@ -83,80 +113,30 @@ func TestAccResourceVSphereStorageDrsVMOverride_update(t *testing.T) {
 	})
 }
 
-func TestAccResourceVSphereStorageDrsVMOverride_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereStorageDrsVMOverridePreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereStorageDrsVMOverrideExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereStorageDrsVMOverrideConfigBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereStorageDrsVMOverrideExists(true),
-					testAccResourceVSphereStorageDrsVMOverrideMatch("", structure.BoolPtr(false), nil),
-				),
-			},
-			{
-				ResourceName:      "vsphere_storage_drs_vm_override.drs_vm_override",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					pod, err := testGetDatastoreCluster(s, "datastore_cluster")
-					if err != nil {
-						return "", err
-					}
-					vm, err := testGetVirtualMachine(s, "vm")
-					if err != nil {
-						return "", err
-					}
-
-					m := make(map[string]string)
-					m["datastore_cluster_path"] = pod.InventoryPath
-					m["virtual_machine_path"] = vm.InventoryPath
-					b, err := json.Marshal(m)
-					if err != nil {
-						return "", err
-					}
-
-					return string(b), nil
-				},
-				Config: testAccResourceVSphereStorageDrsVMOverrideConfigBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereStorageDrsVMOverrideExists(true),
-					testAccResourceVSphereStorageDrsVMOverrideMatch("", structure.BoolPtr(false), nil),
-				),
-			},
-		},
-	})
-}
-
 func testAccResourceVSphereStorageDrsVMOverridePreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_storage_drs_vm_override acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NAS_HOST") == "" {
-		t.Skip("set VSPHERE_NAS_HOST to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NAS_HOST") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NAS_HOST to run vsphere_storage_drs_vm_override acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NFS_PATH") == "" {
-		t.Skip("set VSPHERE_NFS_PATH to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_PATH") == "" {
+		t.Skip("set TF_VAR_VSPHERE_NFS_PATH to run vsphere_storage_drs_vm_override acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST to run vsphere_storage_drs_vm_override acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST2") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST2 to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI_HOST2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST2 to run vsphere_storage_drs_vm_override acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST3") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST3 to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI_HOST3") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST3 to run vsphere_storage_drs_vm_override acceptance tests")
 	}
-	if os.Getenv("VSPHERE_RESOURCE_POOL") == "" {
-		t.Skip("set VSPHERE_RESOURCE_POOL to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_RESOURCE_POOL") == "" {
+		t.Skip("set TF_VAR_VSPHERE_RESOURCE_POOL to run vsphere_storage_drs_vm_override acceptance tests")
 	}
-	if os.Getenv("VSPHERE_NETWORK_LABEL_PXE") == "" {
-		t.Skip("set VSPHERE_NETWORK_LABEL_PXE to run vsphere_storage_drs_vm_override acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_PG_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_PG_NAME to run vsphere_storage_drs_vm_override acceptance tests")
 	}
 }
 
@@ -306,14 +286,14 @@ resource "vsphere_storage_drs_vm_override" "drs_vm_override" {
   sdrs_enabled         = false
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_NAS_HOST"),
-		os.Getenv("VSPHERE_NFS_PATH"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_RESOURCE_POOL"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_NAS_HOST"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_PATH"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_RESOURCE_POOL"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }
 
@@ -411,13 +391,13 @@ resource "vsphere_storage_drs_vm_override" "drs_vm_override" {
   sdrs_intra_vm_affinity = false
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_NAS_HOST"),
-		os.Getenv("VSPHERE_NFS_PATH"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_RESOURCE_POOL"),
-		os.Getenv("VSPHERE_NETWORK_LABEL_PXE"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_NAS_HOST"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_PATH"),
+		os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_HOST3"),
+		os.Getenv("TF_VAR_VSPHERE_RESOURCE_POOL"),
+		os.Getenv("TF_VAR_VSPHERE_PG_NAME"),
 	)
 }

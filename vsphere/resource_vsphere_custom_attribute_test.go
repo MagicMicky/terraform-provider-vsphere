@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
 
 func TestAccResourceVSphereCustomAttribute_basic(t *testing.T) {
@@ -23,6 +23,25 @@ func TestAccResourceVSphereCustomAttribute_basic(t *testing.T) {
 					testAccResourceVSphereCustomAttributeExists(true),
 					testAccResourceVSphereCustomAttributeHasName("terraform-test-attribute"),
 					testAccResourceVSphereCustomAttributeHasType(""),
+				),
+			},
+			{
+				ResourceName:      "vsphere_custom_attribute.terraform-test-attribute",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					attr, err := testGetCustomAttribute(s, "terraform-test-attribute")
+					if err != nil {
+						return "", err
+					}
+					if attr == nil {
+						return "", errors.New("custom attribute does not exist")
+					}
+					return attr.Name, nil
+				},
+				Config: testAccResourceVSphereCustomAttributeConfigBasic,
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereCustomAttributeExists(true),
 				),
 			},
 		},
@@ -92,43 +111,6 @@ func TestAccResourceVSphereCustomAttribute_changeType(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereCustomAttributeExists(true),
 					testAccResourceVSphereCustomAttributeHasType("VirtualMachine"),
-				),
-			},
-		},
-	})
-}
-
-func TestAccResourceVSphereCustomAttribute_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereCustomAttributeExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereCustomAttributeConfigBasic,
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereCustomAttributeExists(true),
-				),
-			},
-			{
-				ResourceName:      "vsphere_custom_attribute.terraform-test-attribute",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					attr, err := testGetCustomAttribute(s, "terraform-test-attribute")
-					if err != nil {
-						return "", err
-					}
-					if attr == nil {
-						return "", errors.New("custom attribute does not exist")
-					}
-					return attr.Name, nil
-				},
-				Config: testAccResourceVSphereCustomAttributeConfigBasic,
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereCustomAttributeExists(true),
 				),
 			},
 		},

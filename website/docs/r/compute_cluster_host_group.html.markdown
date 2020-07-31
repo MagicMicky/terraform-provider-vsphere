@@ -1,4 +1,5 @@
 ---
+subcategory: "Host and Cluster Management"
 layout: "vsphere"
 page_title: "VMware vSphere: vsphere_compute_cluster_host_group"
 sidebar_current: "docs-vsphere-resource-compute-cluster-host-group"
@@ -73,9 +74,9 @@ resource "vsphere_compute_cluster" "compute_cluster" {
 }
 
 resource "vsphere_compute_cluster_host_group" "cluster_host_group" {
-  name                = "terraform-test-cluster-host-group"
-  compute_cluster_id  = "${vsphere_compute_cluster.compute_cluster.id}"
-  host_system_ids     = ["${data.vsphere_host.hosts.*.id}"]
+  name               = "terraform-test-cluster-host-group"
+  compute_cluster_id = "${vsphere_compute_cluster.compute_cluster.id}"
+  host_system_ids    = ["${data.vsphere_host.hosts.*.id}"]
 }
 ```
 

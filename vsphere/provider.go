@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
 
 // defaultAPITimeout is a default timeout value that is passed to functions
@@ -101,6 +101,8 @@ func Provider() terraform.ResourceProvider {
 			"vsphere_compute_cluster_vm_dependency_rule":      resourceVSphereComputeClusterVMDependencyRule(),
 			"vsphere_compute_cluster_vm_group":                resourceVSphereComputeClusterVMGroup(),
 			"vsphere_compute_cluster_vm_host_rule":            resourceVSphereComputeClusterVMHostRule(),
+			"vsphere_content_library":                         resourceVSphereContentLibrary(),
+			"vsphere_content_library_item":                    resourceVSphereContentLibraryItem(),
 			"vsphere_custom_attribute":                        resourceVSphereCustomAttribute(),
 			"vsphere_datacenter":                              resourceVSphereDatacenter(),
 			"vsphere_datastore_cluster":                       resourceVSphereDatastoreCluster(),
@@ -126,19 +128,28 @@ func Provider() terraform.ResourceProvider {
 			"vsphere_vapp_entity":                             resourceVSphereVAppEntity(),
 			"vsphere_vmfs_datastore":                          resourceVSphereVmfsDatastore(),
 			"vsphere_virtual_machine_snapshot":                resourceVSphereVirtualMachineSnapshot(),
+			"vsphere_host":                                    resourceVsphereHost(),
+			"vsphere_vnic":                                    resourceVsphereNic(),
+			"vsphere_vm_storage_policy":                       resourceVmStoragePolicy(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
 			"vsphere_compute_cluster":            dataSourceVSphereComputeCluster(),
+			"vsphere_content_library":            dataSourceVSphereContentLibrary(),
+			"vsphere_content_library_item":       dataSourceVSphereContentLibraryItem(),
 			"vsphere_custom_attribute":           dataSourceVSphereCustomAttribute(),
 			"vsphere_datacenter":                 dataSourceVSphereDatacenter(),
 			"vsphere_datastore":                  dataSourceVSphereDatastore(),
 			"vsphere_datastore_cluster":          dataSourceVSphereDatastoreCluster(),
 			"vsphere_distributed_virtual_switch": dataSourceVSphereDistributedVirtualSwitch(),
+			"vsphere_dynamic":                    dataSourceVSphereDynamic(),
 			"vsphere_folder":                     dataSourceVSphereFolder(),
 			"vsphere_host":                       dataSourceVSphereHost(),
+			"vsphere_host_pci_device":            dataSourceVSphereHostPciDevice(),
+			"vsphere_host_thumbprint":            dataSourceVSphereHostThumbprint(),
 			"vsphere_network":                    dataSourceVSphereNetwork(),
 			"vsphere_resource_pool":              dataSourceVSphereResourcePool(),
+			"vsphere_storage_policy":             dataSourceVSphereStoragePolicy(),
 			"vsphere_tag":                        dataSourceVSphereTag(),
 			"vsphere_tag_category":               dataSourceVSphereTagCategory(),
 			"vsphere_vapp_container":             dataSourceVSphereVAppContainer(),

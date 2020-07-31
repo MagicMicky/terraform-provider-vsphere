@@ -8,10 +8,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -31,6 +31,24 @@ func TestAccResourceVSphereDatastoreCluster_basic(t *testing.T) {
 		CheckDestroy: testAccResourceVSphereDatastoreClusterCheckExists(false),
 		Steps: []resource.TestStep{
 			{
+				Config: testAccResourceVSphereDatastoreClusterConfigBasic(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereDatastoreClusterCheckExists(true),
+					testAccResourceVSphereDatastoreClusterCheckSDRSEnabled(false),
+				),
+			},
+			{
+				ResourceName:            "vsphere_datastore_cluster.datastore_cluster",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"datacenter_id", "sdrs_free_space_threshold"},
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					pod, err := testGetDatastoreCluster(s, "datastore_cluster")
+					if err != nil {
+						return "", err
+					}
+					return pod.InventoryPath, nil
+				},
 				Config: testAccResourceVSphereDatastoreClusterConfigBasic(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereDatastoreClusterCheckExists(true),
@@ -387,47 +405,9 @@ func TestAccResourceVSphereDatastoreCluster_switchCustomAttribute(t *testing.T) 
 	})
 }
 
-func TestAccResourceVSphereDatastoreCluster_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereDatastoreClusterPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereDatastoreClusterCheckExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereDatastoreClusterConfigBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDatastoreClusterCheckExists(true),
-					testAccResourceVSphereDatastoreClusterCheckSDRSEnabled(false),
-				),
-			},
-			{
-				ResourceName:            "vsphere_datastore_cluster.datastore_cluster",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"datacenter_id", "sdrs_free_space_threshold"},
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					pod, err := testGetDatastoreCluster(s, "datastore_cluster")
-					if err != nil {
-						return "", err
-					}
-					return pod.InventoryPath, nil
-				},
-				Config: testAccResourceVSphereDatastoreClusterConfigBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDatastoreClusterCheckExists(true),
-					testAccResourceVSphereDatastoreClusterCheckSDRSEnabled(false),
-				),
-			},
-		},
-	})
-}
-
 func testAccResourceVSphereDatastoreClusterPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_datastore_cluster acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_datastore_cluster acceptance tests")
 	}
 }
 
@@ -672,7 +652,7 @@ func testAccResourceVSphereDatastoreClusterCheckTags(tagResName string) resource
 		if err != nil {
 			return err
 		}
-		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsClient()
+		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsManager()
 		if err != nil {
 			return err
 		}
@@ -705,7 +685,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -725,7 +705,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   sdrs_enabled  = true
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -744,7 +724,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 		name,
 	)
 }
@@ -775,7 +755,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   folder        = "${vsphere_folder.datastore_cluster_folder.path}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 		f,
 	)
 }
@@ -802,7 +782,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   sdrs_vm_evacuation_automation_level      = "automated"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -825,7 +805,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   sdrs_space_utilization_threshold = 50
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -847,7 +827,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   sdrs_io_reservable_iops_threshold = 5000
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -868,7 +848,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   sdrs_io_reservable_percent_threshold = 40
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -890,7 +870,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   sdrs_free_space_threshold      = 500
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -927,7 +907,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   ]
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -975,7 +955,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   tags = "${vsphere_tag.terraform-test-tags-alt.*.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1007,7 +987,7 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   custom_attributes = "${local.attrs}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1045,6 +1025,6 @@ resource "vsphere_datastore_cluster" "datastore_cluster" {
   custom_attributes = "${local.attrs}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }

@@ -10,13 +10,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/helper/validation"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/datastore"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/spbm"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/storagepod"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
 	"github.com/mitchellh/copystructure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/datastore"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/storagepod"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
@@ -214,6 +216,17 @@ func DiskSubresourceSchema() map[string]*schema.Schema {
 			ConflictsWith: []string{"datastore_cluster_id"},
 			Description:   "If this is true, the disk is attached instead of created. Implies keep_on_remove.",
 		},
+		"storage_policy_id": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "The ID of the storage policy to assign to the virtual disk in VM.",
+		},
+		"controller_type": {
+			Type:        schema.TypeString,
+			Default:     "scsi",
+			Optional:    true,
+			Description: "The type of controller the disk should be connected to. Must be 'scsi', 'sata', or 'ide'.",
+		},
 	}
 	structure.MergeSchema(s, subresourceSchema())
 	return s
@@ -257,17 +270,17 @@ func NewDiskSubresource(client *govmomi.Client, rdd resourceDataDiff, d, old map
 func DiskApplyOperation(d *schema.ResourceData, c *govmomi.Client, l object.VirtualDeviceList) (object.VirtualDeviceList, []types.BaseVirtualDeviceConfigSpec, error) {
 	log.Printf("[DEBUG] DiskApplyOperation: Beginning apply operation")
 	o, n := d.GetChange(subresourceTypeDisk)
-	ods := o.([]interface{})
-	nds := n.([]interface{})
+	oldDisks := o.([]interface{})
+	newDisks := n.([]interface{})
 
 	var spec []types.BaseVirtualDeviceConfigSpec
 
 	// Our old and new sets now have an accurate description of devices that may
 	// have been added, removed, or changed. Look for removed devices first.
 	log.Printf("[DEBUG] DiskApplyOperation: Looking for resources to delete")
-	for oi, oe := range ods {
-		om := oe.(map[string]interface{})
-		if err := diskApplyOperationDelete(oi, om, nds, c, d, &l, &spec); err != nil {
+	for oldI, oldDisk := range oldDisks {
+		oldMap := oldDisk.(map[string]interface{})
+		if err := diskApplyOperationDelete(oldI, oldMap, newDisks, c, d, &l, &spec); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -278,9 +291,9 @@ func DiskApplyOperation(d *schema.ResourceData, c *govmomi.Client, l object.Virt
 	var updates []interface{}
 	log.Printf("[DEBUG] DiskApplyOperation: Looking for resources to create or update")
 	log.Printf("[DEBUG] DiskApplyOperation: Resources not being changed: %s", subresourceListString(updates))
-	for ni, ne := range nds {
+	for ni, ne := range newDisks {
 		nm := ne.(map[string]interface{})
-		if err := diskApplyOperationCreateUpdate(ni, nm, ods, c, d, &l, &spec, &updates); err != nil {
+		if err := diskApplyOperationCreateUpdate(ni, nm, oldDisks, c, d, &l, &spec, &updates); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -308,15 +321,15 @@ func diskApplyOperationDelete(
 	spec *[]types.BaseVirtualDeviceConfigSpec,
 ) error {
 	didx := -1
-	for ni, ne := range newDataSet {
-		newData := ne.(map[string]interface{})
+	for newI, newDisk := range newDataSet {
+		newData := newDisk.(map[string]interface{})
 		var name string
 		var err error
 		if name, err = diskLabelOrName(newData); err != nil {
 			return err
 		}
 		if (name == diskDeletedName || name == diskDetachedName) && oldData["uuid"] == newData["uuid"] {
-			didx = ni
+			didx = newI
 			break
 		}
 	}
@@ -409,7 +422,7 @@ func diskApplyOperationCreateUpdate(
 // returned, all necessary values are just set and committed to state.
 func DiskRefreshOperation(d *schema.ResourceData, c *govmomi.Client, l object.VirtualDeviceList) error {
 	log.Printf("[DEBUG] DiskRefreshOperation: Beginning refresh")
-	devices := SelectDisks(l, d.Get("scsi_controller_count").(int))
+	devices := SelectDisks(l, d.Get("scsi_controller_count").(int), d.Get("sata_controller_count").(int), d.Get("ide_controller_count").(int))
 	log.Printf("[DEBUG] DiskRefreshOperation: Disk devices located: %s", DeviceListString(devices))
 	curSet := d.Get(subresourceTypeDisk).([]interface{})
 	log.Printf("[DEBUG] DiskRefreshOperation: Current resource set from state: %s", subresourceListString(curSet))
@@ -456,6 +469,7 @@ func DiskRefreshOperation(d *schema.ResourceData, c *govmomi.Client, l object.Vi
 				// Skip any of these keys as we won't be matching any of those anyway here
 				continue
 			}
+
 			if !diskUUIDMatch(device, m["uuid"].(string)) {
 				// Skip any device that doesn't match UUID
 				continue
@@ -465,6 +479,12 @@ func DiskRefreshOperation(d *schema.ResourceData, c *govmomi.Client, l object.Vi
 			if err := r.Read(l); err != nil {
 				return fmt.Errorf("%s: %s", r.Addr(), err)
 			}
+
+			if strings.HasPrefix(r.Get("label").(string), diskOrphanedPrefix) {
+				// Skip if it's previously discovered orphaned device
+				continue
+			}
+
 			// Done reading, push this onto our new set and remove the device from
 			// the list
 			newSet = append(newSet, r.Data())
@@ -491,9 +511,11 @@ func DiskRefreshOperation(d *schema.ResourceData, c *govmomi.Client, l object.Vi
 		if err != nil {
 			return fmt.Errorf("error computing device address: %s", err)
 		}
-		// We want to set keep_on_remove for these disks as well so that they are
-		// not destroyed when we remove them in the next TF run.
-		m["keep_on_remove"] = true
+		// We want to set keep_on_remove for these disks as well if they are not uploaded from ovf,
+		// so that they are not destroyed when we remove them in the next TF run.
+		if len(d.Get("ovf_deploy").([]interface{})) == 0 {
+			m["keep_on_remove"] = true
+		}
 		r := NewDiskSubresource(c, d, m, nil, len(newSet))
 		if err := r.Read(l); err != nil {
 			return fmt.Errorf("%s: %s", r.Addr(), err)
@@ -529,6 +551,7 @@ func DiskDestroyOperation(d *schema.ResourceData, c *govmomi.Client, l object.Vi
 
 	log.Printf("[DEBUG] DiskDestroyOperation: Detaching devices with keep_on_remove enabled")
 	for oi, oe := range ds {
+
 		m := oe.(map[string]interface{})
 		if !m["keep_on_remove"].(bool) && !m["attach"].(bool) {
 			// We don't care about disks we haven't set to keep
@@ -567,7 +590,9 @@ func DiskDiffOperation(d *schema.ResourceDiff, c *govmomi.Client) error {
 	log.Printf("[DEBUG] DiskDiffOperation: Beginning collective diff validation (indexes aligned to new config)")
 	names := make(map[string]struct{})
 	attachments := make(map[string]struct{})
-	units := make(map[int]struct{})
+	scsiUnits := make(map[int]struct{})
+	sataUnits := make(map[int]struct{})
+	ideUnits := make(map[int]struct{})
 	if len(n.([]interface{})) < 1 {
 		return errors.New("there must be at least one disk specified")
 	}
@@ -581,29 +606,52 @@ func DiskDiffOperation(d *schema.ResourceDiff, c *govmomi.Client) error {
 			return fmt.Errorf("disk: duplicate name %s", name)
 		}
 		// If attach is set, we need to validate that there's no other duplicate paths.
+		curDiskPath := fmt.Sprintf("disk.%d.path", ni)
+		pathKnown := d.NewValueKnown(curDiskPath)
 		if nm["attach"].(bool) {
 			path := diskPathOrName(nm)
-			if path == "" {
-				return fmt.Errorf("disk.%d: path or name cannot be empty when using attach", ni)
+			if pathKnown {
+				if path == "" {
+					return fmt.Errorf("disk.%d: path or name cannot be empty when using attach", ni)
+				}
+				if _, ok := attachments[path]; ok {
+					return fmt.Errorf("disk: multiple entries trying to attach external disk %s", path)
+				}
+				attachments[path] = struct{}{}
+			} else {
+				log.Printf("[DEBUG] Disk path for disk %d is not known yet.", ni)
 			}
-			if _, ok := attachments[path]; ok {
-				return fmt.Errorf("disk: multiple entries trying to attach external disk %s", path)
-			}
-			attachments[path] = struct{}{}
 		}
 
-		if _, ok := units[nm["unit_number"].(int)]; ok {
-			return fmt.Errorf("disk: duplicate unit_number %d", nm["unit_number"].(int))
+		switch nm["controller_type"] {
+		case "scsi":
+			if _, ok := scsiUnits[nm["unit_number"].(int)]; ok {
+				return fmt.Errorf("disk: duplicate SCSI unit_number %d", nm["unit_number"].(int))
+			}
+			scsiUnits[nm["unit_number"].(int)] = struct{}{}
+		case "sata":
+			if _, ok := sataUnits[nm["unit_number"].(int)]; ok {
+				return fmt.Errorf("disk: duplicate SATA unit_number %d", nm["unit_number"].(int))
+			}
+			sataUnits[nm["unit_number"].(int)] = struct{}{}
+		case "ide":
+			if _, ok := ideUnits[nm["unit_number"].(int)]; ok {
+				return fmt.Errorf("disk: duplicate IDE unit_number %d", nm["unit_number"].(int))
+			}
+			ideUnits[nm["unit_number"].(int)] = struct{}{}
 		}
 		names[name] = struct{}{}
-		units[nm["unit_number"].(int)] = struct{}{}
 		r := NewDiskSubresource(c, d, nm, nil, ni)
 		if err := r.DiffGeneral(); err != nil {
 			return fmt.Errorf("%s: %s", r.Addr(), err)
 		}
 	}
-	if _, ok := units[0]; !ok {
-		return errors.New("at least one disk must have a unit_number of 0")
+	_, scsiOk := scsiUnits[0]
+	_, sataOk := sataUnits[0]
+	_, ideOk := ideUnits[1]
+
+	if !scsiOk && !sataOk && !ideOk {
+		return errors.New("at least one disk must have a unit_number of 0 for SATA or SCSI or 1 for IDE")
 	}
 
 	// Perform the normalization here.
@@ -700,7 +748,7 @@ nextNew:
 // existing state.
 func DiskCloneValidateOperation(d *schema.ResourceDiff, c *govmomi.Client, l object.VirtualDeviceList, linked bool) error {
 	log.Printf("[DEBUG] DiskCloneValidateOperation: Checking existing virtual disk configuration")
-	devices := SelectDisks(l, d.Get("scsi_controller_count").(int))
+	devices := SelectDisks(l, d.Get("scsi_controller_count").(int), d.Get("sata_controller_count").(int), d.Get("ide_controller_count").(int))
 	// Sort the device list, in case it's not sorted already.
 	devSort := virtualDeviceListSorter{
 		Sort:       devices,
@@ -873,7 +921,7 @@ func DiskMigrateRelocateOperation(d *schema.ResourceData, c *govmomi.Client, l o
 // configurations fully in sync with what is defined.
 func DiskCloneRelocateOperation(d *schema.ResourceData, c *govmomi.Client, l object.VirtualDeviceList) ([]types.VirtualMachineRelocateSpecDiskLocator, error) {
 	log.Printf("[DEBUG] DiskCloneRelocateOperation: Generating full disk relocate spec list")
-	devices := SelectDisks(l, d.Get("scsi_controller_count").(int))
+	devices := SelectDisks(l, d.Get("scsi_controller_count").(int), d.Get("sata_controller_count").(int), d.Get("ide_controller_count").(int))
 	log.Printf("[DEBUG] DiskCloneRelocateOperation: Disk devices located: %s", DeviceListString(devices))
 	// Sort the device list, in case it's not sorted already.
 	devSort := virtualDeviceListSorter{
@@ -934,7 +982,7 @@ func DiskCloneRelocateOperation(d *schema.ResourceData, c *govmomi.Client, l obj
 // virtual device operations rely pretty heavily on.
 func DiskPostCloneOperation(d *schema.ResourceData, c *govmomi.Client, l object.VirtualDeviceList) (object.VirtualDeviceList, []types.BaseVirtualDeviceConfigSpec, error) {
 	log.Printf("[DEBUG] DiskPostCloneOperation: Looking for disk device changes post-clone")
-	devices := SelectDisks(l, d.Get("scsi_controller_count").(int))
+	devices := SelectDisks(l, d.Get("scsi_controller_count").(int), d.Get("sata_controller_count").(int), d.Get("ide_controller_count").(int))
 	log.Printf("[DEBUG] DiskPostCloneOperation: Disk devices located: %s", DeviceListString(devices))
 	// Sort the device list, in case it's not sorted already.
 	devSort := virtualDeviceListSorter{
@@ -1037,7 +1085,7 @@ func DiskPostCloneOperation(d *schema.ResourceData, c *govmomi.Client, l object.
 // imported device list is sorted by the device's unit number on the SCSI bus.
 func DiskImportOperation(d *schema.ResourceData, c *govmomi.Client, l object.VirtualDeviceList) error {
 	log.Printf("[DEBUG] DiskImportOperation: Performing pre-read import and validation of virtual disks")
-	devices := SelectDisks(l, d.Get("scsi_controller_count").(int))
+	devices := SelectDisks(l, d.Get("scsi_controller_count").(int), d.Get("sata_controller_count").(int), d.Get("ide_controller_count").(int))
 	// Sort the device list, in case it's not sorted already.
 	devSort := virtualDeviceListSorter{
 		Sort:       devices,
@@ -1111,9 +1159,9 @@ func DiskImportOperation(d *schema.ResourceData, c *govmomi.Client, l object.Vir
 // on a virtual machine. This is used in the VM data source to discover
 // specific options of all of the disks on the virtual machine sorted by the
 // order that they would be added in if a clone were to be done.
-func ReadDiskAttrsForDataSource(l object.VirtualDeviceList, count int) ([]map[string]interface{}, error) {
-	log.Printf("[DEBUG] ReadDiskAttrsForDataSource: Fetching select attributes for disks across %d SCSI controllers", count)
-	devices := SelectDisks(l, count)
+func ReadDiskAttrsForDataSource(l object.VirtualDeviceList, d *schema.ResourceData) ([]map[string]interface{}, error) {
+	log.Printf("[DEBUG] ReadDiskAttrsForDataSource: Fetching select attributes for disks")
+	devices := SelectDisks(l, d.Get("scsi_controller_scan_count").(int), d.Get("sata_controller_scan_count").(int), d.Get("ide_controller_scan_count").(int))
 	log.Printf("[DEBUG] ReadDiskAttrsForDataSource: Disk devices located: %s", DeviceListString(devices))
 	// Sort the device list, in case it's not sorted already.
 	devSort := virtualDeviceListSorter{
@@ -1182,6 +1230,12 @@ func (r *DiskSubresource) Create(l object.VirtualDeviceList) ([]types.BaseVirtua
 	if r.Get("attach").(bool) {
 		dspec[0].GetVirtualDeviceConfigSpec().FileOperation = ""
 	}
+
+	// Attach the SPBM storage policy if specified
+	if policyID := r.Get("storage_policy_id").(string); policyID != "" {
+		dspec[0].GetVirtualDeviceConfigSpec().Profile = spbm.PolicySpecByID(policyID)
+	}
+
 	spec = append(spec, dspec...)
 	log.Printf("[DEBUG] %s: Device config operations from create: %s", r, DeviceChangeString(spec))
 	log.Printf("[DEBUG] %s: Create finished", r)
@@ -1203,6 +1257,14 @@ func (r *DiskSubresource) Read(l object.VirtualDeviceList) error {
 	r.Set("unit_number", unit)
 	if err := r.SaveDevIDs(disk, ctlr); err != nil {
 		return err
+	}
+	switch ctlr.(type) {
+	case types.BaseVirtualSCSIController:
+		r.Set("controller_type", "scsi")
+	case types.BaseVirtualSATAController:
+		r.Set("controller_type", "sata")
+	case *types.VirtualIDEController:
+		r.Set("controller_type", "ide")
 	}
 
 	// Fetch disk attachment state in config
@@ -1253,6 +1315,21 @@ func (r *DiskSubresource) Read(l object.VirtualDeviceList) error {
 			r.Set("io_share_count", shares.Shares)
 		}
 	}
+
+	// Set storage policy if the VM exists.
+	vmUUID := r.rdd.Id()
+	if vmUUID != "" {
+		result, err := virtualmachine.MOIDForUUID(r.client, vmUUID)
+		if err != nil {
+			return err
+		}
+		polID, err := spbm.PolicyIDByVirtualDisk(r.client, result.MOID, r.Get("key").(int))
+		if err != nil {
+			return err
+		}
+		r.Set("storage_policy_id", polID)
+	}
+
 	log.Printf("[DEBUG] %s: Read finished (key and device address may have changed)", r)
 	return nil
 }
@@ -1266,7 +1343,7 @@ func (r *DiskSubresource) Update(l object.VirtualDeviceList) ([]types.BaseVirtua
 	}
 
 	// Has the unit number changed?
-	if r.HasChange("unit_number") {
+	if r.HasChange("unit_number") || r.HasChange("controller_type") {
 		ctlr, err := r.assignDisk(l, disk)
 		if err != nil {
 			return nil, fmt.Errorf("cannot assign disk: %s", err)
@@ -1297,6 +1374,12 @@ func (r *DiskSubresource) Update(l object.VirtualDeviceList) ([]types.BaseVirtua
 	}
 	// Clear file operation - VirtualDeviceList currently sets this to replace, which is invalid
 	dspec[0].GetVirtualDeviceConfigSpec().FileOperation = ""
+
+	// Attach the SPBM storage policy if specified
+	if policyID := r.Get("storage_policy_id").(string); policyID != "" {
+		dspec[0].GetVirtualDeviceConfigSpec().Profile = spbm.PolicySpecByID(policyID)
+	}
+
 	log.Printf("[DEBUG] %s: Device config operations from update: %s", r, DeviceChangeString(dspec))
 	log.Printf("[DEBUG] %s: Update complete", r)
 	return dspec, nil
@@ -1435,13 +1518,32 @@ func (r *DiskSubresource) DiffGeneral() error {
 
 	// Enforce the maximum unit number, which is the current value of
 	// scsi_controller_count * 15 - 1.
-	ctlrCount := r.rdd.Get("scsi_controller_count").(int)
-	maxUnit := ctlrCount*15 - 1
-	currentUnit := r.Get("unit_number").(int)
-	if currentUnit > maxUnit {
-		return fmt.Errorf("unit_number on disk %q too high (%d) - maximum value is %d with %d SCSI controller(s)", name, currentUnit, maxUnit, ctlrCount)
+	switch r.Get("controller_type").(string) {
+	case "scsi":
+		ctlrCount := r.rdd.Get("scsi_controller_count").(int)
+		maxUnit := ctlrCount*15 - 1
+		currentUnit := r.Get("unit_number").(int)
+		if currentUnit > maxUnit {
+			return fmt.Errorf("unit_number on disk %q too high (%d) - maximum value is %d with %d SCSI controller(s)", name, currentUnit, maxUnit, ctlrCount)
+		}
+	case "sata":
+		ctlrCount := r.rdd.Get("sata_controller_count").(int)
+		maxUnit := ctlrCount * 30
+		currentUnit := r.Get("unit_number").(int)
+		if currentUnit > maxUnit {
+			return fmt.Errorf("unit_number on disk %q too high (%d) - maximum value is %d with %d SATA controller(s)", name, currentUnit, maxUnit, ctlrCount)
+		}
+	case "ide":
+		ctlrCount := r.rdd.Get("ide_controller_count").(int)
+		maxUnit := ctlrCount*2 - 1
+		currentUnit := r.Get("unit_number").(int)
+		if currentUnit == 0 {
+			return fmt.Errorf("unit_number 0 on IDE is reserved for CD-ROM")
+		}
+		if currentUnit > maxUnit {
+			return fmt.Errorf("unit_number on disk %q too high (%d) - maximum value is %d with %d IDE controller(s)", name, currentUnit, maxUnit, ctlrCount)
+		}
 	}
-
 	if r.Get("attach").(bool) {
 		switch {
 		case r.Get("datastore_id").(string) == "":
@@ -1604,6 +1706,11 @@ func (r *DiskSubresource) Relocate(l object.VirtualDeviceList, clone bool) (type
 		relocate.DiskBackingInfo = backing
 	}
 
+	// Attach the SPBM storage policy if specified
+	if policyID := r.Get("storage_policy_id").(string); policyID != "" {
+		relocate.Profile = spbm.PolicySpecByID(policyID)
+	}
+
 	// Done!
 	log.Printf("[DEBUG] %s: Generated disk locator: %s", r, diskRelocateString(relocate))
 	log.Printf("[DEBUG] %s: Relocate generation complete", r)
@@ -1695,8 +1802,24 @@ func (r *DiskSubresource) assignBackingInfo(disk *types.VirtualDisk) error {
 	if dsID == "" || dsID == diskDatastoreComputedName {
 		// Default to the default datastore
 		dsID = r.rdd.Get("datastore_id").(string)
-	}
 
+		if dsID == "" {
+			vmObj, err := virtualmachine.FromUUID(r.client, r.rdd.Id())
+			if err != nil {
+				return err
+			}
+
+			vmprops, err := virtualmachine.Properties(vmObj)
+			if err != nil {
+				return err
+			}
+			if len(vmprops.Datastore) == 0 {
+				return fmt.Errorf("no datastore was set and was unable to find a default to fall back to")
+			}
+			dsID = vmprops.Datastore[0].Value
+
+		}
+	}
 	ds, err := datastore.FromID(r.client, dsID)
 	if err != nil {
 		return err
@@ -1722,48 +1845,119 @@ func (r *DiskSubresource) assignBackingInfo(disk *types.VirtualDisk) error {
 // the SCSI bus. An error is returned if the assigned unit number is taken.
 func (r *DiskSubresource) assignDisk(l object.VirtualDeviceList, disk *types.VirtualDisk) (types.BaseVirtualController, error) {
 	number := r.Get("unit_number").(int)
-	// Figure out the bus number, and look up the SCSI controller that matches
-	// that. You can attach 15 disks to a SCSI controller, and we allow a maximum
-	// of 30 devices.
-	bus := number / 15
-	// Also determine the unit number on that controller.
-	unit := int32(math.Mod(float64(number), 15))
+	var ctlr types.BaseVirtualController
+	var err error
+	switch r.Get("controller_type").(string) {
+	case "scsi":
+		// Figure out the bus number, and look up the SCSI controller that matches
+		// that. You can attach 15 disks to a SCSI controller, and we allow a maximum
+		// of 30 devices.
+		bus := number / 15
+		// Also determine the unit number on that controller.
+		unit := int32(math.Mod(float64(number), 15))
 
-	// Find the controller.
-	ctlr, err := r.ControllerForCreateUpdate(l, SubresourceControllerTypeSCSI, bus)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build the unit list.
-	units := make([]bool, 16)
-	// Reserve the SCSI unit number
-	scsiUnit := ctlr.(types.BaseVirtualSCSIController).GetVirtualSCSIController().ScsiCtlrUnitNumber
-	units[scsiUnit] = true
-
-	ckey := ctlr.GetVirtualController().Key
-
-	for _, device := range l {
-		d := device.GetVirtualDevice()
-		if d.ControllerKey != ckey || d.UnitNumber == nil {
-			continue
+		// Find the controller.
+		ctlr, err = r.ControllerForCreateUpdate(l, SubresourceControllerTypeSCSI, bus)
+		if err != nil {
+			return nil, err
 		}
-		units[*d.UnitNumber] = true
-	}
 
-	// We now have a valid list of units. If we need to, shift up the desired
-	// unit number so it's not taking the unit of the controller itself.
-	if unit >= scsiUnit {
-		unit++
-	}
+		// Build the unit list.
+		units := make([]bool, 16)
+		// Reserve the SCSI unit number
+		scsiUnit := ctlr.(types.BaseVirtualSCSIController).GetVirtualSCSIController().ScsiCtlrUnitNumber
+		units[scsiUnit] = true
 
-	if units[unit] {
-		return nil, fmt.Errorf("unit number %d on SCSI bus %d is in use", unit, bus)
-	}
+		ckey := ctlr.GetVirtualController().Key
 
-	// If we made it this far, we are good to go!
-	disk.ControllerKey = ctlr.GetVirtualController().Key
-	disk.UnitNumber = &unit
+		for _, device := range l {
+			d := device.GetVirtualDevice()
+			if d.ControllerKey != ckey || d.UnitNumber == nil {
+				continue
+			}
+			units[*d.UnitNumber] = true
+		}
+
+		// We now have a valid list of units. If we need to, shift up the desired
+		// unit number so it's not taking the unit of the controller itself.
+		if unit >= scsiUnit {
+			unit++
+		}
+
+		if units[unit] {
+			return nil, fmt.Errorf("unit number %d on SCSI bus %d is in use", unit, bus)
+		}
+
+		// If we made it this far, we are good to go!
+		disk.ControllerKey = ctlr.GetVirtualController().Key
+		disk.UnitNumber = &unit
+	case "sata":
+		// Figure out the bus number, and look up the SATA controller that matches
+		// that. You can attach 30 disks to a SATA controller.
+		bus := number / 30
+		// Also determine the unit number on that controller.
+		unit := int32(math.Mod(float64(number), 30))
+
+		// Find the controller.
+		ctlr, err = r.ControllerForCreateUpdate(l, SubresourceControllerTypeSATA, bus)
+		if err != nil {
+			return nil, err
+		}
+
+		// Build the unit list.
+		units := make([]bool, 30)
+		// Reserve the SCSI unit number
+		ckey := ctlr.GetVirtualController().Key
+
+		for _, device := range l {
+			d := device.GetVirtualDevice()
+			if d.ControllerKey != ckey || d.UnitNumber == nil {
+				continue
+			}
+			units[*d.UnitNumber] = true
+		}
+
+		if units[unit] {
+			return nil, fmt.Errorf("unit number %d on SATA bus %d is in use", unit, bus)
+		}
+
+		// If we made it this far, we are good to go!
+		disk.ControllerKey = ctlr.GetVirtualController().Key
+		disk.UnitNumber = &unit
+	case "ide":
+		// Figure out the bus number, and look up the IDE controller that matches
+		// that. You can attach 2 disks to a IDE controller.
+		bus := number / 2
+		// Also determine the unit number on that controller.
+		unit := int32(math.Mod(float64(number), 2))
+
+		// Find the controller.
+		ctlr, err = r.ControllerForCreateUpdate(l, SubresourceControllerTypeIDE, bus)
+		if err != nil {
+			return nil, err
+		}
+
+		// Build the unit list.
+		units := make([]bool, 2)
+		// Reserve the SCSI unit number
+		ckey := ctlr.GetVirtualController().Key
+
+		for _, device := range l {
+			d := device.GetVirtualDevice()
+			if d.ControllerKey != ckey || d.UnitNumber == nil {
+				continue
+			}
+			units[*d.UnitNumber] = true
+		}
+
+		if units[unit] {
+			return nil, fmt.Errorf("unit number %d on IDE bus %d is in use", unit, bus)
+		}
+
+		// If we made it this far, we are good to go!
+		disk.ControllerKey = ctlr.GetVirtualController().Key
+		disk.UnitNumber = &unit
+	}
 	return ctlr, nil
 }
 
@@ -1778,16 +1972,24 @@ func (r *Subresource) findControllerInfo(l object.VirtualDeviceList, disk *types
 	if disk.UnitNumber == nil {
 		return -1, nil, fmt.Errorf("unit number on disk key %d is unset", disk.Key)
 	}
-	sc, ok := ctlr.(types.BaseVirtualSCSIController)
-	if !ok {
-		return -1, nil, fmt.Errorf("controller at key %d is not a SCSI controller (actual: %T)", ctlr.GetVirtualDevice().Key, ctlr)
+	switch sc := ctlr.(type) {
+	case types.BaseVirtualSCSIController:
+		unit := *disk.UnitNumber
+		if unit > sc.GetVirtualSCSIController().ScsiCtlrUnitNumber {
+			unit--
+		}
+		unit = unit + 15*sc.GetVirtualSCSIController().BusNumber
+		return int(unit), ctlr.(types.BaseVirtualController), nil
+	case types.BaseVirtualSATAController:
+		unit := *disk.UnitNumber
+		unit = unit + 30*sc.GetVirtualSATAController().BusNumber
+		return int(unit), ctlr.(types.BaseVirtualController), nil
+	case *types.VirtualIDEController:
+		unit := *disk.UnitNumber
+		unit = unit + 2*sc.GetVirtualController().BusNumber
+		return int(unit), ctlr.(types.BaseVirtualController), nil
 	}
-	unit := *disk.UnitNumber
-	if unit > sc.GetVirtualSCSIController().ScsiCtlrUnitNumber {
-		unit--
-	}
-	unit = unit + 15*sc.GetVirtualSCSIController().BusNumber
-	return int(unit), ctlr.(types.BaseVirtualController), nil
+	return 0, nil, fmt.Errorf("unable to locate controller info for disk: %d", disk.Key)
 }
 
 // diskRelocateListString pretty-prints a list of
@@ -1837,8 +2039,10 @@ func (l virtualDeviceListSorter) Less(i, j int) bool {
 	if liCtlr == nil || ljCtlr == nil {
 		panic(errors.New("virtualDeviceListSorter cannot be used with devices that are not assigned to a controller"))
 	}
-	if liCtlr.(types.BaseVirtualController).GetVirtualController().BusNumber < liCtlr.(types.BaseVirtualController).GetVirtualController().BusNumber {
-		return true
+	liCtlrBus := liCtlr.(types.BaseVirtualController).GetVirtualController().BusNumber
+	ljCtlrBus := ljCtlr.(types.BaseVirtualController).GetVirtualController().BusNumber
+	if liCtlrBus != ljCtlrBus {
+		return liCtlrBus < ljCtlrBus
 	}
 	liUnit := li.GetVirtualDevice().UnitNumber
 	ljUnit := lj.GetVirtualDevice().UnitNumber
@@ -1887,17 +2091,25 @@ func datastorePathHasBase(p, b string) bool {
 // the number of controllers that Terraform is managing and serves as an upper
 // limit (count - 1) of the SCSI bus number for a controller that eligible
 // disks need to be attached to.
-func SelectDisks(l object.VirtualDeviceList, count int) object.VirtualDeviceList {
+func SelectDisks(l object.VirtualDeviceList, scsiCount, sataCount, ideCount int) object.VirtualDeviceList {
 	devices := l.Select(func(device types.BaseVirtualDevice) bool {
 		if disk, ok := device.(*types.VirtualDisk); ok {
 			ctlr, err := findControllerForDevice(l, disk)
+			var count int
+			switch ctlr.(type) {
+			case types.BaseVirtualSCSIController:
+				count = scsiCount
+			case types.BaseVirtualSATAController:
+				count = sataCount
+			case *types.VirtualIDEController:
+				count = ideCount
+			}
 			if err != nil {
 				log.Printf("[DEBUG] DiskRefreshOperation: Error looking for controller for device %q: %s", l.Name(disk), err)
 				return false
 			}
-			if sc, ok := ctlr.(types.BaseVirtualSCSIController); ok && sc.GetVirtualSCSIController().BusNumber < int32(count) {
-				cd := sc.(types.BaseVirtualDevice)
-				log.Printf("[DEBUG] DiskRefreshOperation: Found controller %q for device %q", l.Name(cd), l.Name(disk))
+			if ctlr.GetVirtualController().BusNumber < int32(count) {
+				log.Printf("[DEBUG] DiskRefreshOperation: Found controller %q for device %q", l.Name(ctlr.GetVirtualController()), l.Name(disk))
 				return true
 			}
 		}

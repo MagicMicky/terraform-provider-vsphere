@@ -6,10 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 )
 
 func TestAccResourceVSphereResourcePool_basic(t *testing.T) {
@@ -18,12 +18,43 @@ func TestAccResourceVSphereResourcePool_basic(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereResourcePoolPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereResourcePoolCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereResourcePoolConfigBasic(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereResourcePoolCheckExists(true),
+				),
+			},
+			{
+				ResourceName:      "vsphere_resource_pool.resource_pool",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					rp, err := testGetResourcePool(s, "resource_pool")
+					if err != nil {
+						return "", err
+					}
+					return fmt.Sprintf("/%s/host/%s/Resources/terraform-resource-pool-test-parent/%s",
+						os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+						os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
+						rp.Name(),
+					), nil
+				},
+				Config: testAccResourceVSphereResourcePoolConfigNonDefault(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereResourcePoolCheckExists(true),
+					testAccResourceVSphereResourcePoolCheckCPUReservation(10),
+					testAccResourceVSphereResourcePoolCheckCPUExpandable(false),
+					testAccResourceVSphereResourcePoolCheckCPULimit(20),
+					testAccResourceVSphereResourcePoolCheckCPUShareLevel("custom"),
+					testAccResourceVSphereResourcePoolCheckCPUShares(10),
+					testAccResourceVSphereResourcePoolCheckCPUReservation(10),
+					testAccResourceVSphereResourcePoolCheckCPUExpandable(false),
+					testAccResourceVSphereResourcePoolCheckCPULimit(20),
+					testAccResourceVSphereResourcePoolCheckMemoryShareLevel("custom"),
+					testAccResourceVSphereResourcePoolCheckMemoryShares(10),
 				),
 			},
 		},
@@ -36,7 +67,9 @@ func TestAccResourceVSphereResourcePool_updateRename(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereResourcePoolPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereResourcePoolCheckExists(false),
+
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereResourcePoolConfigBasic(),
@@ -62,7 +95,9 @@ func TestAccResourceVSphereResourcePool_updateToCustom(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereResourcePoolPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereResourcePoolCheckExists(false),
+
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereResourcePoolConfigBasic(),
@@ -104,7 +139,8 @@ func TestAccResourceVSphereResourcePool_updateToDefaults(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereResourcePoolPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereResourcePoolCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereResourcePoolConfigNonDefault(),
@@ -146,7 +182,8 @@ func TestAccResourceVSphereResourcePool_esxiHost(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereResourcePoolPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereResourcePoolCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereResourcePoolConfigEsxiHost(),
@@ -164,7 +201,8 @@ func TestAccResourceVSphereResourcePool_updateParent(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereResourcePoolPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereResourcePoolCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereResourcePoolConfigBasic(),
@@ -184,61 +222,14 @@ func TestAccResourceVSphereResourcePool_updateParent(t *testing.T) {
 	})
 }
 
-func TestAccResourceVSphereResourcePool_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereResourcePoolPreCheck(t)
-		},
-		Providers: testAccProviders,
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereResourcePoolConfigNonDefault(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereResourcePoolCheckExists(true),
-				),
-			},
-			{
-				ResourceName:      "vsphere_resource_pool.resource_pool",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					rp, err := testGetResourcePool(s, "resource_pool")
-					if err != nil {
-						return "", err
-					}
-					return fmt.Sprintf("/%s/host/%s/Resources/terraform-resource-pool-test-parent/%s",
-						os.Getenv("VSPHERE_DATACENTER"),
-						os.Getenv("VSPHERE_CLUSTER"),
-						rp.Name(),
-					), nil
-				},
-				Config: testAccResourceVSphereResourcePoolConfigNonDefault(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereResourcePoolCheckExists(true),
-					testAccResourceVSphereResourcePoolCheckCPUReservation(10),
-					testAccResourceVSphereResourcePoolCheckCPUExpandable(false),
-					testAccResourceVSphereResourcePoolCheckCPULimit(20),
-					testAccResourceVSphereResourcePoolCheckCPUShareLevel("custom"),
-					testAccResourceVSphereResourcePoolCheckCPUShares(10),
-					testAccResourceVSphereResourcePoolCheckCPUReservation(10),
-					testAccResourceVSphereResourcePoolCheckCPUExpandable(false),
-					testAccResourceVSphereResourcePoolCheckCPULimit(20),
-					testAccResourceVSphereResourcePoolCheckMemoryShareLevel("custom"),
-					testAccResourceVSphereResourcePoolCheckMemoryShares(10),
-				),
-			},
-		},
-	})
-}
-
 func TestAccResourceVSphereResourcePool_tags(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
 			testAccResourceVSphereResourcePoolPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereResourcePoolCheckExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config: testAccResourceVSphereResourcePoolConfigTags(),
@@ -252,14 +243,14 @@ func TestAccResourceVSphereResourcePool_tags(t *testing.T) {
 }
 
 func testAccResourceVSphereResourcePoolPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_resource_pool acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_resource_pool acceptance tests")
 	}
-	if os.Getenv("VSPHERE_CLUSTER") == "" {
-		t.Skip("set VSPHERE_CLUSTER to run vsphere_resource_pool acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_CLUSTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_CLUSTER to run vsphere_resource_pool acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST5") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST5 to run vsphere_resource_pool acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI2 to run vsphere_resource_pool acceptance tests")
 	}
 }
 
@@ -306,7 +297,7 @@ func testAccResourceVSphereResourcePoolCheckTags(tagResName string) resource.Tes
 		if err != nil {
 			return err
 		}
-		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsClient()
+		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsManager()
 		if err != nil {
 			return err
 		}
@@ -491,8 +482,8 @@ resource "vsphere_resource_pool" "resource_pool" {
   parent_resource_pool_id = "${vsphere_resource_pool.alt_parent_resource_pool.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
 	)
 }
 
@@ -535,8 +526,8 @@ resource "vsphere_resource_pool" "resource_pool" {
   memory_limit            = 20
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
 	)
 }
 
@@ -564,8 +555,8 @@ resource "vsphere_resource_pool" "resource_pool" {
   parent_resource_pool_id = "${data.vsphere_host.host.resource_pool_id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST5"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
 	)
 }
 
@@ -608,8 +599,8 @@ resource "vsphere_resource_pool" "resource_pool" {
   tags                    = ["${vsphere_tag.terraform-test-tag.id}"]
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
 	)
 }
 
@@ -642,8 +633,8 @@ resource "vsphere_resource_pool" "resource_pool" {
   parent_resource_pool_id = "${vsphere_resource_pool.parent_resource_pool.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
 	)
 }
 
@@ -676,7 +667,7 @@ resource "vsphere_resource_pool" "resource_pool" {
   parent_resource_pool_id = "${vsphere_resource_pool.parent_resource_pool.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_CLUSTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_CLUSTER"),
 	)
 }

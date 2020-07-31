@@ -1,4 +1,5 @@
 ---
+subcategory: "Inventory"
 layout: "vsphere"
 page_title: "VMware vSphere: vsphere_datacenter"
 sidebar_current: "docs-vsphere-resource-inventory-datacenter"
@@ -17,7 +18,7 @@ container of inventory objects such as hosts and virtual machines.
 
 ```hcl
 resource "vsphere_datacenter" "prod_datacenter" {
-  name       = "my_prod_datacenter"
+  name = "my_prod_datacenter"
 }
 ```
 
@@ -25,8 +26,8 @@ resource "vsphere_datacenter" "prod_datacenter" {
 
 ```hcl
 resource "vsphere_datacenter" "research_datacenter" {
-  name       = "my_research_datacenter"
-  folder     = "/research/"
+  name   = "my_research_datacenter"
+  folder = "/research/"
 }
 ```
 

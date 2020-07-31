@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -38,6 +38,7 @@ func ConfigSchema() *schema.Schema {
 		Type:        schema.TypeMap,
 		Description: "A list of custom attributes to set on this resource.",
 		Optional:    true,
+		Elem:        &schema.Schema{Type: schema.TypeString},
 	}
 }
 

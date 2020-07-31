@@ -7,11 +7,11 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/datastore"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/datastore"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 )
 
 func TestAccResourceVSphereVmfsDatastore_basic(t *testing.T) {
@@ -28,6 +28,21 @@ func TestAccResourceVSphereVmfsDatastore_basic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereVmfsDatastoreExists(true),
 				),
+			},
+			{
+				Config:      testAccResourceVSphereVmfsDatastoreConfigStaticSingle(),
+				ImportState: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					vars, err := testClientVariablesForResource(s, "vsphere_vmfs_datastore.datastore")
+					if err != nil {
+						return "", err
+					}
+
+					return fmt.Sprintf("%s:%s", vars.resourceID, vars.resourceAttributes["host_system_id"]), nil
+				},
+				ResourceName:            "vsphere_vmfs_datastore.datastore",
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"multiple_host_access"},
 			},
 		},
 	})
@@ -141,7 +156,7 @@ func TestAccResourceVSphereVmfsDatastore_withFolder(t *testing.T) {
 				Config: testAccResourceVSphereVmfsDatastoreConfigStaticSingleFolder(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereVmfsDatastoreExists(true),
-					testAccResourceVSphereVmfsDatastoreMatchInventoryPath(os.Getenv("VSPHERE_DS_FOLDER")),
+					testAccResourceVSphereVmfsDatastoreMatchInventoryPath(os.Getenv("TF_VAR_VSPHERE_DS_FOLDER")),
 				),
 			},
 		},
@@ -168,7 +183,7 @@ func TestAccResourceVSphereVmfsDatastore_moveToFolderAfter(t *testing.T) {
 				ExpectError: expectErrorIfNotVirtualCenter(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereVmfsDatastoreExists(true),
-					testAccResourceVSphereVmfsDatastoreMatchInventoryPath(os.Getenv("VSPHERE_DS_FOLDER")),
+					testAccResourceVSphereVmfsDatastoreMatchInventoryPath(os.Getenv("TF_VAR_VSPHERE_DS_FOLDER")),
 				),
 			},
 		},
@@ -275,7 +290,8 @@ func TestAccResourceVSphereVmfsDatastore_badDiskEntry(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVmfsDatastorePreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVmfsDatastoreExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccResourceVSphereVmfsDatastoreConfigBadDisk(),
@@ -296,7 +312,8 @@ func TestAccResourceVSphereVmfsDatastore_duplicateDiskEntry(t *testing.T) {
 			testAccPreCheck(t)
 			testAccResourceVSphereVmfsDatastorePreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccResourceVSphereVmfsDatastoreExists(false),
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccResourceVSphereVmfsDatastoreConfigDuplicateDisk(),
@@ -306,40 +323,6 @@ func TestAccResourceVSphereVmfsDatastore_duplicateDiskEntry(t *testing.T) {
 			{
 				Config: testAccResourceVSphereEmpty,
 				Check:  resource.ComposeTestCheckFunc(),
-			},
-		},
-	})
-}
-
-func TestAccResourceVSphereVmfsDatastore_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereVmfsDatastorePreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereVmfsDatastoreExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereVmfsDatastoreConfigStaticSingle(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereVmfsDatastoreExists(true),
-				),
-			},
-			{
-				Config:      testAccResourceVSphereVmfsDatastoreConfigStaticSingle(),
-				ImportState: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					vars, err := testClientVariablesForResource(s, "vsphere_vmfs_datastore.datastore")
-					if err != nil {
-						return "", err
-					}
-
-					return fmt.Sprintf("%s:%s", vars.resourceID, vars.resourceAttributes["host_system_id"]), nil
-				},
-				ResourceName:            "vsphere_vmfs_datastore.datastore",
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"multiple_host_access"},
 			},
 		},
 	})
@@ -393,23 +376,23 @@ func TestAccResourceVSphereVmfsDatastore_multiCustomAttribute(t *testing.T) {
 }
 
 func testAccResourceVSphereVmfsDatastorePreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_ESXI_HOST") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST to run vsphere_vmfs_disks acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST to run vsphere_vmfs_disks acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DS_VMFS_DISK0") == "" {
-		t.Skip("set VSPHERE_DS_VMFS_DISK0 to run vsphere_vmfs_datastore acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DS_VMFS_DISK0 to run vsphere_vmfs_datastore acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DS_VMFS_DISK1") == "" {
-		t.Skip("set VSPHERE_DS_VMFS_DISK1 to run vsphere_vmfs_datastore acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK1") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DS_VMFS_DISK1 to run vsphere_vmfs_datastore acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DS_VMFS_DISK2") == "" {
-		t.Skip("set VSPHERE_DS_VMFS_DISK2 to run vsphere_vmfs_datastore acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DS_VMFS_DISK2 to run vsphere_vmfs_datastore acceptance tests")
 	}
-	if os.Getenv("VSPHERE_VMFS_REGEXP") == "" {
-		t.Skip("set VSPHERE_VMFS_REGEXP to run vsphere_vmfs_datastore acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_VMFS_REGEXP") == "" {
+		t.Skip("set TF_VAR_VSPHERE_VMFS_REGEXP to run vsphere_vmfs_datastore acceptance tests")
 	}
-	if os.Getenv("VSPHERE_DS_FOLDER") == "" {
-		t.Skip("set VSPHERE_DS_FOLDER to run vsphere_vmfs_datastore acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DS_FOLDER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DS_FOLDER to run vsphere_vmfs_datastore acceptance tests")
 	}
 }
 
@@ -417,7 +400,8 @@ func testAccResourceVSphereVmfsDatastoreExists(expected bool) resource.TestCheck
 	return func(s *terraform.State) error {
 		ds, err := testGetDatastore(s, "vsphere_vmfs_datastore.datastore")
 		if err != nil {
-			if viapi.IsManagedObjectNotFoundError(err) && expected == false {
+			missingState, _ := regexp.MatchString("not found in state", err.Error())
+			if viapi.IsManagedObjectNotFoundError(err) && !expected || missingState && !expected {
 				// Expected missing
 				return nil
 			}
@@ -503,7 +487,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
     "${var.disk0}",
   ]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigStaticSingleAltName() string {
@@ -530,7 +514,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
     "${var.disk0}",
   ]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigStaticMulti() string {
@@ -569,7 +553,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
     "${var.disk2}",
   ]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DS_VMFS_DISK1"), os.Getenv("VSPHERE_DS_VMFS_DISK2"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK1"), os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK2"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigDiscoverDatasource() string {
@@ -600,7 +584,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
 
   disks = "${data.vsphere_vmfs_disks.available.disks}"
 }
-`, os.Getenv("VSPHERE_VMFS_REGEXP"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_VMFS_REGEXP"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigStaticSingleFolder() string {
@@ -633,7 +617,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
     "${var.disk0}",
   ]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DS_FOLDER"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DS_FOLDER"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigTags() string {
@@ -676,7 +660,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
 
   tags = ["${vsphere_tag.terraform-test-tag.id}"]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigMultiTags() string {
@@ -732,7 +716,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
 
   tags = "${vsphere_tag.terraform-test-tags-alt.*.id}"
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigBadDisk() string {
@@ -766,7 +750,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
     "",
   ]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DS_VMFS_DISK1"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK1"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigDuplicateDisk() string {
@@ -800,7 +784,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
     "${var.disk1}",
   ]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DS_VMFS_DISK1"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK1"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigCustomAttributes() string {
@@ -840,7 +824,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
 
   custom_attributes = "${local.vmfs_attrs}"
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigMultiCustomAttributes() string {
@@ -886,7 +870,7 @@ resource "vsphere_vmfs_datastore" "datastore" {
 
   custom_attributes = "${local.vmfs_attrs}"
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }
 
 func testAccResourceVSphereVmfsDatastoreConfigDatastoreCluster() string {
@@ -924,5 +908,5 @@ resource "vsphere_vmfs_datastore" "datastore" {
     "${var.disk0}",
   ]
 }
-`, os.Getenv("VSPHERE_DS_VMFS_DISK0"), os.Getenv("VSPHERE_DS_FOLDER"), os.Getenv("VSPHERE_DATACENTER"), os.Getenv("VSPHERE_ESXI_HOST"))
+`, os.Getenv("TF_VAR_VSPHERE_DS_VMFS_DISK0"), os.Getenv("TF_VAR_VSPHERE_DS_FOLDER"), os.Getenv("TF_VAR_VSPHERE_DATACENTER"), os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME"))
 }

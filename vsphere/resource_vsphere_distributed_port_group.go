@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/dvportgroup"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/dvportgroup"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -51,7 +51,7 @@ func resourceVSphereDistributedPortGroupCreate(d *schema.ResourceData, meta inte
 	if err := viapi.ValidateVirtualCenter(client); err != nil {
 		return err
 	}
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func resourceVSphereDistributedPortGroupRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	if tagsClient, _ := meta.(*VSphereClient).TagsClient(); tagsClient != nil {
+	if tagsClient, _ := meta.(*VSphereClient).TagsManager(); tagsClient != nil {
 		if err := readTagsForResource(tagsClient, pg, d); err != nil {
 			return fmt.Errorf("error reading tags: %s", err)
 		}
@@ -146,7 +146,7 @@ func resourceVSphereDistributedPortGroupUpdate(d *schema.ResourceData, meta inte
 	if err := viapi.ValidateVirtualCenter(client); err != nil {
 		return err
 	}
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}

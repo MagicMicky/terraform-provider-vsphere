@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
 	"github.com/vmware/govmomi/object"
 )
 
@@ -81,7 +81,7 @@ func resourceVSphereCustomAttributeRead(d *schema.ResourceData, meta interface{}
 	}
 	field := fields.ByKey(int32(key))
 	if field == nil {
-		return fmt.Errorf("could not locate category with id %q", key)
+		return fmt.Errorf("could not locate category with id '%d'", key)
 	}
 	d.Set("name", field.Name)
 	d.Set("managed_object_type", field.ManagedObjectType)

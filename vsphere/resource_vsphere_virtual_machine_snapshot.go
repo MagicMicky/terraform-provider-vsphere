@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -144,7 +144,7 @@ func resourceVSphereVirtualMachineSnapshotRead(d *schema.ResourceData, meta inte
 	defer cancel()
 	snapshot, err := vm.FindSnapshot(ctx, d.Id())
 	if err != nil {
-		if strings.Contains(err.Error(), "No snapshots for this VM") || strings.Contains(err.Error(), "snapshot \""+d.Get("snapshot_name").(string)+"\" not found") {
+		if strings.Contains(err.Error(), "no snapshots for this VM") || strings.Contains(err.Error(), "snapshot \""+d.Get("snapshot_name").(string)+"\" not found") {
 			log.Printf("[DEBUG] Error While finding the Snapshot: %v", err)
 			d.SetId("")
 			return nil

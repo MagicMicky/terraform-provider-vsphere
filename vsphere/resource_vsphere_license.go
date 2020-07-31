@@ -7,7 +7,7 @@ import (
 
 	"context"
 
-	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/vmware/govmomi/license"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/types"
@@ -41,6 +41,7 @@ func resourceVSphereLicense() *schema.Resource {
 			"labels": {
 				Type:     schema.TypeMap,
 				Optional: true,
+				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 
 			// computed properties returned by the API

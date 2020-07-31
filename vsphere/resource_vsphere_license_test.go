@@ -9,8 +9,8 @@ import (
 
 	"regexp"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 	"github.com/vmware/govmomi/license"
 )
 
@@ -47,7 +47,8 @@ func TestAccResourceVSphereLicense_invalid(t *testing.T) {
 		PreCheck: func() {
 			testAccPreCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccVSphereLicenseDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccVSphereLicenseInvalidConfig,
@@ -69,7 +70,8 @@ func TestAccResourceVSphereLicense_withLabelsOnVCenter(t *testing.T) {
 			testAccVSpherePreLicenseBasicCheck(t)
 			testAccVspherePreLicenseESXiServerIsNotSetCheck(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccVSphereLicenseDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccVSphereLicenseWithLabelConfig(),
@@ -90,7 +92,8 @@ func TestAccResourceVSphereLicense_withLabelsOnESXiServer(t *testing.T) {
 			testAccVSpherePreLicenseBasicCheck(t)
 			testAccSkipIfNotEsxi(t)
 		},
-		Providers: testAccProviders,
+		Providers:    testAccProviders,
+		CheckDestroy: testAccVSphereLicenseDestroy,
 		Steps: []resource.TestStep{
 			{
 				Config: testAccVSphereLicenseWithLabelConfig(),
@@ -103,9 +106,9 @@ func TestAccResourceVSphereLicense_withLabelsOnESXiServer(t *testing.T) {
 }
 
 func testAccVspherePreLicenseESXiServerIsNotSetCheck(t *testing.T) {
-	key, err := strconv.ParseBool(os.Getenv("VSPHERE_TEST_ESXI"))
+	key, err := strconv.ParseBool(os.Getenv("TF_VAR_VSPHERE_TEST_ESXI"))
 	if err == nil && key {
-		t.Skip("VSPHERE_TEST_ESXI must not be set for this acceptance test")
+		t.Skip("TF_VAR_VSPHERE_TEST_ESXI must not be set for this acceptance test")
 	}
 }
 
@@ -118,7 +121,7 @@ resource "vsphere_license" "foo" {
    TestTitle = "fooBar"
   }
 }
-`, os.Getenv("VSPHERE_LICENSE"))
+`, os.Getenv("TF_VAR_VSPHERE_LICENSE"))
 }
 
 func testAccVSphereLicenseBasicConfig() string {
@@ -126,7 +129,7 @@ func testAccVSphereLicenseBasicConfig() string {
 resource "vsphere_license" "foo" {
  license_key = "%s"
 }
-`, os.Getenv("VSPHERE_LICENSE"))
+`, os.Getenv("TF_VAR_VSPHERE_LICENSE"))
 }
 
 func testAccVSphereLicenseDestroy(s *terraform.State) error {
@@ -181,8 +184,8 @@ func testAccVSphereLicenseNotExists(name string) resource.TestCheckFunc {
 }
 
 func testAccVSpherePreLicenseBasicCheck(t *testing.T) {
-	if key := os.Getenv("VSPHERE_LICENSE"); key == "" {
-		t.Fatal("VSPHERE_LICENSE must be set for acceptance test")
+	if key := os.Getenv("TF_VAR_VSPHERE_LICENSE"); key == "" {
+		t.Fatal("TF_VAR_VSPHERE_LICENSE must be set for acceptance test")
 	}
 }
 

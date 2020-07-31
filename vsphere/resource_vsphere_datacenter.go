@@ -9,10 +9,10 @@ import (
 
 	"context"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/datacenter"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/customattribute"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/datacenter"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/methods"
@@ -61,7 +61,7 @@ func resourceVSphereDatacenterCreate(d *schema.ResourceData, meta interface{}) e
 
 	// Load up the tags client, which will validate a proper vCenter before
 	// attempting to proceed if we have tags defined.
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func resourceVSphereDatacenterRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 	// Read tags if we have the ability to do so
-	if tagsClient, _ := meta.(*VSphereClient).TagsClient(); tagsClient != nil {
+	if tagsClient, _ := meta.(*VSphereClient).TagsManager(); tagsClient != nil {
 		if err := readTagsForResource(tagsClient, dc, d); err != nil {
 			return err
 		}
@@ -197,7 +197,7 @@ func resourceVSphereDatacenterRead(d *schema.ResourceData, meta interface{}) err
 func resourceVSphereDatacenterUpdate(d *schema.ResourceData, meta interface{}) error {
 	// Load up the tags client, which will validate a proper vCenter before
 	// attempting to proceed if we have tags defined.
-	tagsClient, err := tagsClientIfDefined(d, meta)
+	tagsClient, err := tagsManagerIfDefined(d, meta)
 	if err != nil {
 		return err
 	}

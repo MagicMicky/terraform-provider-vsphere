@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -30,6 +30,36 @@ func TestAccResourceVSphereDPMHostOverride_basic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereDPMHostOverrideExists(true),
 					testAccResourceVSphereDPMHostOverrideMatch(types.DpmBehaviorManual, false),
+				),
+			},
+			{
+				ResourceName:      "vsphere_dpm_host_override.dpm_host_override",
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					cluster, err := testGetComputeCluster(s, "compute_cluster")
+					if err != nil {
+						return "", err
+					}
+					host, err := testGetHostFromDataSource(s, "hosts.0")
+					if err != nil {
+						return "", err
+					}
+
+					m := make(map[string]string)
+					m["compute_cluster_path"] = cluster.InventoryPath
+					m["host_path"] = host.InventoryPath
+					b, err := json.Marshal(m)
+					if err != nil {
+						return "", err
+					}
+
+					return string(b), nil
+				},
+				Config: testAccResourceVSphereDPMHostOverrideConfigOverrides(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereDPMHostOverrideExists(true),
+					testAccResourceVSphereDPMHostOverrideMatch(types.DpmBehaviorAutomated, true),
 				),
 			},
 		},
@@ -83,65 +113,15 @@ func TestAccResourceVSphereDPMHostOverride_update(t *testing.T) {
 	})
 }
 
-func TestAccResourceVSphereDPMHostOverride_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereDPMHostOverridePreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereDPMHostOverrideExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereDPMHostOverrideConfigOverrides(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDPMHostOverrideExists(true),
-					testAccResourceVSphereDPMHostOverrideMatch(types.DpmBehaviorAutomated, true),
-				),
-			},
-			{
-				ResourceName:      "vsphere_dpm_host_override.dpm_host_override",
-				ImportState:       true,
-				ImportStateVerify: true,
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					cluster, err := testGetComputeCluster(s, "compute_cluster")
-					if err != nil {
-						return "", err
-					}
-					host, err := testGetHostFromDataSource(s, "hosts.0")
-					if err != nil {
-						return "", err
-					}
-
-					m := make(map[string]string)
-					m["compute_cluster_path"] = cluster.InventoryPath
-					m["host_path"] = host.InventoryPath
-					b, err := json.Marshal(m)
-					if err != nil {
-						return "", err
-					}
-
-					return string(b), nil
-				},
-				Config: testAccResourceVSphereDPMHostOverrideConfigOverrides(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDPMHostOverrideExists(true),
-					testAccResourceVSphereDPMHostOverrideMatch(types.DpmBehaviorAutomated, true),
-				),
-			},
-		},
-	})
-}
-
 func testAccResourceVSphereDPMHostOverridePreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_DATACENTER") == "" {
-		t.Skip("set VSPHERE_DATACENTER to run vsphere_compute_cluster acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_DATACENTER") == "" {
+		t.Skip("set TF_VAR_VSPHERE_DATACENTER to run vsphere_compute_cluster acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST4") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST4 to run vsphere_compute_cluster acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI1") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI1 to run vsphere_compute_cluster acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST5") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST5 to run vsphere_compute_cluster acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI2 to run vsphere_compute_cluster acceptance tests")
 	}
 }
 
@@ -237,9 +217,9 @@ resource "vsphere_dpm_host_override" "dpm_host_override" {
   host_system_id       = "${data.vsphere_host.hosts.0.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST4"),
-		os.Getenv("VSPHERE_ESXI_HOST5"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
 	)
 }
 
@@ -281,8 +261,8 @@ resource "vsphere_dpm_host_override" "dpm_host_override" {
   dpm_automation_level = "automated"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST4"),
-		os.Getenv("VSPHERE_ESXI_HOST5"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
 	)
 }

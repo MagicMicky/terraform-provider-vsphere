@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/virtualdevice"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/virtualdevice"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -17,12 +17,12 @@ func testAccResourceVSphereVirtualMachineMigrateStatePreCheck(t *testing.T) {
 	if os.Getenv("TF_ACC") == "" {
 		t.Skip("set TF_ACC to run vsphere_virtual_machine state migration tests (provider connection is required)")
 	}
-	if os.Getenv("VSPHERE_VM_V1_PATH") == "" {
-		t.Skip("set VSPHERE_VM_V1_PATH to run vsphere_virtual_machine state migration tests")
+	if os.Getenv("TF_VAR_VSPHERE_VM_V1_PATH") == "" {
+		t.Skip("set TF_VAR_VSPHERE_VM_V1_PATH to run vsphere_virtual_machine state migration tests")
 	}
 }
 
-func TestVSphereVirtualMachineMigrateStateV1(t *testing.T) {
+func TestVSphereVirtualMachine_migrateStateV1(t *testing.T) {
 	cases := map[string]struct {
 		Attributes map[string]string
 		Expected   map[string]string
@@ -76,7 +76,7 @@ func TestVSphereVirtualMachineMigrateStateV1(t *testing.T) {
 	}
 }
 
-func TestAccResourceVSphereVirtualMachineMigrateStateV3_fromV2(t *testing.T) {
+func TestAccResourceVSphereVirtualMachine_migrateStateV3_fromV2(t *testing.T) {
 	testAccResourceVSphereVirtualMachineMigrateStatePreCheck(t)
 	testAccPreCheck(t)
 
@@ -86,7 +86,7 @@ func TestAccResourceVSphereVirtualMachineMigrateStateV3_fromV2(t *testing.T) {
 	}
 
 	client := meta.(*VSphereClient).vimClient
-	pth := os.Getenv("VSPHERE_VM_V1_PATH")
+	pth := os.Getenv("TF_VAR_VSPHERE_VM_V1_PATH")
 	vm, err := virtualmachine.FromPath(client, pth, nil)
 	if err != nil {
 		t.Fatalf("error fetching virtual machine: %s", err)
@@ -96,7 +96,7 @@ func TestAccResourceVSphereVirtualMachineMigrateStateV3_fromV2(t *testing.T) {
 		t.Fatalf("error fetching virtual machine properties: %s", err)
 	}
 
-	disks := virtualdevice.SelectDisks(object.VirtualDeviceList(props.Config.Hardware.Device), 1)
+	disks := virtualdevice.SelectDisks(object.VirtualDeviceList(props.Config.Hardware.Device), 1, 0, 0)
 	disk := disks[0].(*types.VirtualDisk)
 	backing := disk.Backing.(*types.VirtualDiskFlatVer2BackingInfo)
 	is := &terraform.InstanceState{
@@ -115,7 +115,7 @@ func TestAccResourceVSphereVirtualMachineMigrateStateV3_fromV2(t *testing.T) {
 	}
 }
 
-func TestAccResourceVSphereVirtualMachineMigrateStateV3_fromV1(t *testing.T) {
+func TestAccResourceVSphereVirtualMachine_migrateStateV3FromV1(t *testing.T) {
 	testAccResourceVSphereVirtualMachineMigrateStatePreCheck(t)
 	testAccPreCheck(t)
 
@@ -125,7 +125,7 @@ func TestAccResourceVSphereVirtualMachineMigrateStateV3_fromV1(t *testing.T) {
 	}
 
 	client := meta.(*VSphereClient).vimClient
-	pth := os.Getenv("VSPHERE_VM_V1_PATH")
+	pth := os.Getenv("TF_VAR_VSPHERE_VM_V1_PATH")
 	name := path.Base(pth)
 	vm, err := virtualmachine.FromPath(client, pth, nil)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestAccResourceVSphereVirtualMachineMigrateStateV3_fromV1(t *testing.T) {
 	}
 }
 
-func TestAccResourceVSphereVirtualMachineMigrateStateV2(t *testing.T) {
+func TestAccResourceVSphereVirtualMachine_migrateStateV2(t *testing.T) {
 	testAccResourceVSphereVirtualMachineMigrateStatePreCheck(t)
 	testAccPreCheck(t)
 
@@ -179,7 +179,7 @@ func TestAccResourceVSphereVirtualMachineMigrateStateV2(t *testing.T) {
 	}
 
 	client := meta.(*VSphereClient).vimClient
-	pth := os.Getenv("VSPHERE_VM_V1_PATH")
+	pth := os.Getenv("TF_VAR_VSPHERE_VM_V1_PATH")
 	name := path.Base(pth)
 	vm, err := virtualmachine.FromPath(client, pth, nil)
 	if err != nil {

@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -21,6 +21,23 @@ func TestAccResourceVSphereDistributedPortGroup_basic(t *testing.T) {
 		CheckDestroy: testAccResourceVSphereDistributedPortGroupExists(false),
 		Steps: []resource.TestStep{
 			{
+				Config: testAccResourceVSphereDistributedPortGroupConfig(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereDistributedPortGroupExists(true),
+				),
+			},
+			{
+				ResourceName:            "vsphere_distributed_port_group.pg",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"vlan_range"},
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					pg, err := testGetDVPortgroup(s, "pg")
+					if err != nil {
+						return "", err
+					}
+					return pg.InventoryPath, nil
+				},
 				Config: testAccResourceVSphereDistributedPortGroupConfig(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereDistributedPortGroupExists(true),
@@ -129,42 +146,6 @@ func TestAccResourceVSphereDistributedPortGroup_multiTag(t *testing.T) {
 	})
 }
 
-func TestAccResourceVSphereDistributedPortGroup_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereDistributedPortGroupPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereDistributedPortGroupExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereDistributedPortGroupConfig(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDistributedPortGroupExists(true),
-				),
-			},
-			{
-				ResourceName:            "vsphere_distributed_port_group.pg",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"vlan_range"},
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					pg, err := testGetDVPortgroup(s, "pg")
-					if err != nil {
-						return "", err
-					}
-					return pg.InventoryPath, nil
-				},
-				Config: testAccResourceVSphereDistributedPortGroupConfig(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDistributedPortGroupExists(true),
-				),
-			},
-		},
-	})
-}
-
 func TestAccResourceVSphereDistributedPortGroup_singleCustomAttribute(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -213,20 +194,20 @@ func TestAccResourceVSphereDistributedPortGroup_multiCustomAttribute(t *testing.
 }
 
 func testAccResourceVSphereDistributedPortGroupPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_HOST_NIC0") == "" {
-		t.Skip("set VSPHERE_HOST_NIC0 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_HOST_NIC0") == "" {
+		t.Skip("set TF_VAR_VSPHERE_HOST_NIC0 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_HOST_NIC1") == "" {
-		t.Skip("set VSPHERE_HOST_NIC1 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_HOST_NIC1") == "" {
+		t.Skip("set TF_VAR_VSPHERE_HOST_NIC1 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST2") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST2 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI_HOST2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST2 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST3") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST3 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI_HOST3") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST3 to run vsphere_host_virtual_switch acceptance tests")
 	}
 }
 
@@ -274,7 +255,7 @@ func testAccResourceVSphereDistributedPortGroupCheckTags(tagResName string) reso
 		if err != nil {
 			return err
 		}
-		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsClient()
+		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsManager()
 		if err != nil {
 			return err
 		}
@@ -312,7 +293,7 @@ resource "vsphere_distributed_port_group" "pg" {
   distributed_virtual_switch_uuid = "${vsphere_distributed_virtual_switch.dvs.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -366,7 +347,7 @@ resource "vsphere_distributed_port_group" "pg" {
   distributed_virtual_switch_uuid = "${vsphere_distributed_virtual_switch.dvs.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -428,7 +409,7 @@ resource "vsphere_distributed_port_group" "pg" {
   distributed_virtual_switch_uuid = "${vsphere_distributed_virtual_switch.dvs.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -462,7 +443,7 @@ resource "vsphere_distributed_port_group" "pg" {
 	}
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -501,7 +482,7 @@ resource "vsphere_distributed_port_group" "pg" {
   tags                            = ["${vsphere_tag.terraform-test-tag.id}"]
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -553,7 +534,7 @@ resource "vsphere_distributed_port_group" "pg" {
   tags                            = "${vsphere_tag.terraform-test-tags-alt.*.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -590,7 +571,7 @@ resource "vsphere_distributed_port_group" "pg" {
   custom_attributes = "${local.pg_attrs}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -641,6 +622,6 @@ resource "vsphere_distributed_port_group" "pg" {
   custom_attributes = "${local.pg_attrs}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }

@@ -8,10 +8,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -25,6 +25,23 @@ func TestAccResourceVSphereDistributedVirtualSwitch_basic(t *testing.T) {
 		CheckDestroy: testAccResourceVSphereDistributedVirtualSwitchExists(false),
 		Steps: []resource.TestStep{
 			{
+				Config: testAccResourceVSphereDistributedVirtualSwitchConfig(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccResourceVSphereDistributedVirtualSwitchExists(true),
+				),
+			},
+			{
+				ResourceName:            "vsphere_distributed_virtual_switch.dvs",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"vlan_range"},
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					dvs, err := testGetDVS(s, "dvs")
+					if err != nil {
+						return "", err
+					}
+					return dvs.InventoryPath, nil
+				},
 				Config: testAccResourceVSphereDistributedVirtualSwitchConfig(),
 				Check: resource.ComposeTestCheckFunc(
 					testAccResourceVSphereDistributedVirtualSwitchExists(true),
@@ -345,42 +362,6 @@ func TestAccResourceVSphereDistributedVirtualSwitch_vlanRanges(t *testing.T) {
 	})
 }
 
-func TestAccResourceVSphereDistributedVirtualSwitch_import(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			testAccResourceVSphereDistributedVirtualSwitchPreCheck(t)
-		},
-		Providers:    testAccProviders,
-		CheckDestroy: testAccResourceVSphereDistributedVirtualSwitchExists(false),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccResourceVSphereDistributedVirtualSwitchConfig(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDistributedVirtualSwitchExists(true),
-				),
-			},
-			{
-				ResourceName:            "vsphere_distributed_virtual_switch.dvs",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"vlan_range"},
-				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					dvs, err := testGetDVS(s, "dvs")
-					if err != nil {
-						return "", err
-					}
-					return dvs.InventoryPath, nil
-				},
-				Config: testAccResourceVSphereDistributedVirtualSwitchConfig(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccResourceVSphereDistributedVirtualSwitchExists(true),
-				),
-			},
-		},
-	})
-}
-
 func TestAccResourceVSphereDistributedVirtualSwitch_singleCustomAttribute(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -429,20 +410,20 @@ func TestAccResourceVSphereDistributedVirtualSwitch_multiCustomAttribute(t *test
 }
 
 func testAccResourceVSphereDistributedVirtualSwitchPreCheck(t *testing.T) {
-	if os.Getenv("VSPHERE_HOST_NIC0") == "" {
-		t.Skip("set VSPHERE_HOST_NIC0 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_HOST_NIC0") == "" {
+		t.Skip("set TF_VAR_VSPHERE_HOST_NIC0 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_HOST_NIC1") == "" {
-		t.Skip("set VSPHERE_HOST_NIC1 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_HOST_NIC1") == "" {
+		t.Skip("set TF_VAR_VSPHERE_HOST_NIC1 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_NFS_DS_NAME") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST2") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST2 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI_HOST2") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST2 to run vsphere_host_virtual_switch acceptance tests")
 	}
-	if os.Getenv("VSPHERE_ESXI_HOST3") == "" {
-		t.Skip("set VSPHERE_ESXI_HOST3 to run vsphere_host_virtual_switch acceptance tests")
+	if os.Getenv("TF_VAR_VSPHERE_ESXI_HOST3") == "" {
+		t.Skip("set TF_VAR_VSPHERE_ESXI_HOST3 to run vsphere_host_virtual_switch acceptance tests")
 	}
 }
 
@@ -629,7 +610,7 @@ func testAccResourceVSphereDistributedVirtualSwitchCheckTags(tagResName string) 
 		if err != nil {
 			return err
 		}
-		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsClient()
+		tagsClient, err := testAccProvider.Meta().(*VSphereClient).TagsManager()
 		if err != nil {
 			return err
 		}
@@ -657,13 +638,11 @@ variable "esxi_hosts" {
   default = [
     "%s",
     "%s",
-    "%s",
   ]
 }
 
 variable "network_interfaces" {
   default = [
-    "%s",
     "%s",
   ]
 }
@@ -698,12 +677,10 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_HOST_NIC0"),
-		os.Getenv("VSPHERE_HOST_NIC1"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
 	)
 }
 
@@ -717,13 +694,11 @@ variable "esxi_hosts" {
   default = [
     "%s",
     "%s",
-    "%s",
   ]
 }
 
 variable "network_interfaces" {
   default = [
-    "%s",
     "%s",
   ]
 }
@@ -763,12 +738,10 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_HOST_NIC0"),
-		os.Getenv("VSPHERE_HOST_NIC1"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
 		version,
 	)
 }
@@ -781,7 +754,6 @@ variable "datacenter" {
 
 variable "esxi_hosts" {
   default = [
-    "%s",
     "%s",
     "%s",
   ]
@@ -823,11 +795,10 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_HOST_NIC0"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
 	)
 }
 
@@ -839,7 +810,6 @@ variable "datacenter" {
 
 variable "esxi_hosts" {
   default = [
-    "%s",
     "%s",
     "%s",
   ]
@@ -884,11 +854,10 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_HOST_NIC0"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
 	)
 }
 
@@ -900,7 +869,6 @@ variable "datacenter" {
 
 variable "esxi_hosts" {
   default = [
-    "%s",
     "%s",
     "%s",
   ]
@@ -944,11 +912,10 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_HOST_NIC0"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
 	)
 }
 
@@ -960,7 +927,6 @@ variable "datacenter" {
 
 variable "esxi_hosts" {
   default = [
-    "%s",
     "%s",
     "%s",
   ]
@@ -1006,11 +972,10 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
-		os.Getenv("VSPHERE_ESXI_HOST"),
-		os.Getenv("VSPHERE_ESXI_HOST2"),
-		os.Getenv("VSPHERE_ESXI_HOST3"),
-		os.Getenv("VSPHERE_HOST_NIC0"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI1"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI2"),
+		os.Getenv("TF_VAR_VSPHERE_ESXI_TRUNK_NIC"),
 	)
 }
 
@@ -1029,7 +994,7 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1055,7 +1020,7 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   folder        = "${vsphere_folder.folder.path}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1089,7 +1054,7 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   tags          = ["${vsphere_tag.terraform-test-tag.id}"]
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1136,7 +1101,7 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   tags          = "${vsphere_tag.terraform-test-tags-alt.*.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1165,7 +1130,7 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   netflow_sampling_rate         = 10
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1194,7 +1159,7 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   }
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1226,7 +1191,7 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   custom_attributes = "${local.vs_attrs}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -1272,6 +1237,6 @@ resource "vsphere_distributed_virtual_switch" "dvs" {
   custom_attributes = "${local.vs_attrs}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }

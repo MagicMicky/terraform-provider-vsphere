@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hashicorp/terraform/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 )
 
 func TestAccDataSourceVSphereDistributedVirtualSwitch_basic(t *testing.T) {
@@ -135,7 +135,7 @@ data "vsphere_distributed_virtual_switch" "dvs-data" {
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -168,7 +168,7 @@ resource "vsphere_distributed_port_group" "pg" {
   standby_uplinks = ["${data.vsphere_distributed_virtual_switch.dvs-data.uplinks[1]}"]
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }
 
@@ -192,6 +192,6 @@ data "vsphere_distributed_virtual_switch" "dvs-data" {
   name          = "/${var.datacenter}/network/${vsphere_distributed_virtual_switch.dvs.name}"
 }
 `,
-		os.Getenv("VSPHERE_DATACENTER"),
+		os.Getenv("TF_VAR_VSPHERE_DATACENTER"),
 	)
 }

@@ -1,18 +1,17 @@
-module github.com/terraform-providers/terraform-provider-vsphere
+module github.com/hashicorp/terraform-provider-vsphere
 
-replace github.com/Sirupsen/logrus => github.com/sirupsen/logrus v1.3.0
-
-go 1.12
+go 1.13
 
 require (
-	github.com/Sirupsen/logrus v0.0.0-00010101000000-000000000000 // indirect
+	github.com/aws/aws-sdk-go v1.28.8 // indirect
 	github.com/davecgh/go-spew v1.1.1
-	github.com/dustinkirkland/golang-petname v0.0.0-20190613200456-11339a705ed2 // indirect
-	github.com/hashicorp/terraform v0.12.2
+	github.com/dustinkirkland/golang-petname v0.0.0-20191129215211-8e5a1ed0cff0 // indirect
+	github.com/hashicorp/terraform v0.12.21 // indirect
+	github.com/hashicorp/terraform-plugin-sdk v1.7.0
 	github.com/mitchellh/copystructure v1.0.0
-	github.com/terraform-providers/terraform-provider-null v1.0.0
-	github.com/terraform-providers/terraform-provider-random v2.0.0+incompatible
-	github.com/terraform-providers/terraform-provider-template v1.0.0
-	github.com/vmware/govmomi v0.20.1
-	github.com/vmware/vic v1.5.2
+	github.com/terraform-providers/terraform-provider-null v1.0.1-0.20191204185112-e5c592237f62
+	github.com/terraform-providers/terraform-provider-random v1.3.2-0.20190925210718-83518d96ae4f
+	github.com/terraform-providers/terraform-provider-template v1.0.0 // indirect
+	github.com/vmware/govmomi v0.22.2-0.20200523220130-61b30e20be49
+	google.golang.org/genproto v0.0.0-20200122232147-0452cf42e150 // indirect
 )

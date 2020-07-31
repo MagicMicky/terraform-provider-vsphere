@@ -4,15 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/vmware/govmomi/vapi/library"
+	"github.com/vmware/govmomi/vapi/rest"
+	"github.com/vmware/govmomi/vapi/vcenter"
 	"log"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/folder"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/provider"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/vappcontainer"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/folder"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/provider"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/vappcontainer"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -21,6 +26,8 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 )
+
+const powerOnWaitMilli = 500
 
 var errGuestShutdownTimeout = errors.New("the VM did not power off within the specified amount of time")
 
@@ -357,14 +364,52 @@ func skipIPAddrForWaiter(ip net.IP, ignoredGuestIPs []interface{}) bool {
 	case ip.IsMulticast():
 		return true
 	default:
+		// ignoredGuestIPs pre-validated by Schema!
 		for _, ignoredGuestIP := range ignoredGuestIPs {
-			if ip.String() == ignoredGuestIP.(string) {
+			if strings.Contains(ignoredGuestIP.(string), "/") {
+				_, ignoredIPNet, _ := net.ParseCIDR(ignoredGuestIP.(string))
+				if ignoredIPNet.Contains(ip) {
+					return true
+				}
+			} else if net.ParseIP(ignoredGuestIP.(string)).Equal(ip) {
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+func blockUntilReadyForMethod(method string, vm *object.VirtualMachine, ctx context.Context) error {
+	log.Printf("[DEBUG] blockUntilReadyForMethod: Going to block until %q is no longer in the Disabled Methods list for vm %s", method, vm.Reference().Value)
+
+	for {
+		vprops, err := Properties(vm)
+		if err != nil {
+			return fmt.Errorf("cannot fetch properties of created virtual machine: %s", err)
+		}
+		stillPending := false
+		for _, methodName := range vprops.DisabledMethod {
+			if methodName == method {
+				stillPending = true
+				break
+			}
+		}
+
+		if !stillPending {
+			log.Printf("[DEBUG] blockUntilReadyForMethod: %q no longer disabled for vm %s", method, vm.Reference().Value)
+			break
+		}
+
+		select {
+		case <-time.After(5 * time.Second):
+			log.Printf("[DEBUG] blockUntilReadyForMethod: %q still disabled for vm %s, about to check again", method, vm.Reference().Value)
+		case <-ctx.Done():
+			return fmt.Errorf("blockUntilReadyForMethod: timed out while waiting for %q to become available for vm %s", method, vm.Reference().Value)
+		}
+	}
+
+	return nil
 }
 
 // Create wraps the creation of a virtual machine and the subsequent waiting of
@@ -421,6 +466,61 @@ func Clone(c *govmomi.Client, src *object.VirtualMachine, f *object.Folder, name
 	return FromMOID(c, result.Result.(types.ManagedObjectReference).Value)
 }
 
+func DeployDest(name string, annotation string, rp *object.ResourcePool, host *object.HostSystem, folder *object.Folder, ds viapi.ManagedObject, spId string, nm []vcenter.NetworkMapping) *vcenter.Deploy {
+	rpId := ""
+	hostId := ""
+	folderId := ""
+
+	if rp != nil {
+		rpId = rp.Reference().Value
+	}
+	if host != nil {
+		hostId = host.Reference().Value
+	}
+	if folder != nil {
+		folderId = folder.Reference().Value
+	}
+
+	d := vcenter.Deploy{
+		DeploymentSpec: vcenter.DeploymentSpec{
+			Name:                name,
+			Annotation:          annotation,
+			AcceptAllEULA:       true,
+			NetworkMappings:     nm,
+			StorageMappings:     nil,
+			StorageProvisioning: "",
+			StorageProfileID:    spId,
+			Locale:              "",
+			Flags:               nil,
+			AdditionalParams:    nil,
+			DefaultDatastoreID:  ds.Reference().Value,
+		},
+		Target: vcenter.Target{
+			ResourcePoolID: rpId,
+			HostID:         hostId,
+			FolderID:       folderId,
+		},
+	}
+	return &d
+}
+
+func Deploy(c *rest.Client, item *library.Item, deploy *vcenter.Deploy, timeout int) (*types.ManagedObjectReference, error) {
+	log.Printf("[DEBUG] virtualmachine.Deploy: Deploying VM from Content Library item %s", item.Name)
+	m := vcenter.NewManager(c)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*time.Duration(timeout))
+	defer cancel()
+
+	mo, err := m.DeployLibraryItem(ctx, item.ID, *deploy)
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			err = errors.New("timeout waiting for deploy to complete")
+		}
+		return nil, err
+	}
+	log.Printf("[DEBUG] virtualmachine.Deploy: Successfully deployed VM from Content Library item %s", item.Name)
+	return mo, nil
+}
+
 // Customize wraps the customization of a virtual machine and the subsequent
 // waiting of the task.
 func Customize(vm *object.VirtualMachine, spec types.CustomizationSpec) error {
@@ -437,17 +537,64 @@ func Customize(vm *object.VirtualMachine, spec types.CustomizationSpec) error {
 }
 
 // PowerOn wraps powering on a VM and the waiting for the subsequent task.
-func PowerOn(vm *object.VirtualMachine) error {
-	log.Printf("[DEBUG] Powering on virtual machine %q", vm.InventoryPath)
-	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+func PowerOn(vm *object.VirtualMachine, pTimeout time.Duration) error {
+	vmPath := vm.InventoryPath
+	log.Printf("[DEBUG] Powering on virtual machine %q", vmPath)
+	var ctxTimeout time.Duration
+	if pTimeout > provider.DefaultAPITimeout {
+		ctxTimeout = pTimeout
+	} else {
+		ctxTimeout = provider.DefaultAPITimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	task, err := vm.PowerOn(ctx)
+
+	err := blockUntilReadyForMethod("PowerOnVM_Task", vm, ctx)
 	if err != nil {
 		return err
 	}
-	tctx, tcancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
-	defer tcancel()
-	return task.Wait(tctx)
+
+	// This is the controversial part. Although we take every precaution to make sure the VM
+	// is in a state that can be started we have noticed that vsphere will randomly fail to
+	// power on the vm with "InvalidState" errors.
+	//
+	// We're adding a small loop that will try to power on the VM until we hit a timeout
+	// or manage to call PowerOnVM_Task successfully.
+
+powerLoop:
+	for {
+		select {
+		case <-time.After(500 * time.Millisecond):
+			vprops, err := Properties(vm)
+			if err != nil {
+				return fmt.Errorf("cannot fetch properties of created virtual machine: %s", err)
+			}
+			if vprops.Runtime.PowerState == types.VirtualMachinePowerStatePoweredOff {
+				log.Printf("[DEBUG] VM %q is powered off, attempting to power on.", vmPath)
+				task, err := vm.PowerOn(ctx)
+				if err != nil {
+					log.Printf("[DEBUG] Failed to submit PowerOn task for vm %q. Error: %s", vmPath, err)
+					return fmt.Errorf("failed to submit poweron task for vm %q: %s", vmPath, err)
+				}
+				err = task.Wait(ctx)
+				if err != nil {
+					if err.Error() == "The operation is not allowed in the current state." {
+						log.Printf("[DEBUG] vm %q cannot be powered on in the current state", vmPath)
+						continue powerLoop
+					} else {
+						log.Printf("[DEBUG] PowerOn task for vm %q failed. Error: %s", vmPath, err)
+						return fmt.Errorf("powerOn task for vm %q failed: %s", vmPath, err)
+					}
+				}
+				log.Printf("[DEBUG] PowerOn task for VM %q was successful.", vmPath)
+				break powerLoop
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("timed out while trying to power on vm %q", vmPath)
+		}
+	}
+	return nil
 }
 
 // PowerOff wraps powering off a VM and the waiting for the subsequent task.
@@ -718,4 +865,61 @@ func (r MOIDForUUIDResults) UUIDs() []string {
 		uuids = append(uuids, result.UUID)
 	}
 	return uuids
+}
+
+// GetHardwareVersionID gets the hardware version string from integer
+func GetHardwareVersionID(vint int) string {
+	// hardware_version isn't set, so return an empty string.
+	if vint == 0 {
+		return ""
+	}
+	return fmt.Sprintf("vmx-%d", vint)
+}
+
+// GetHardwareVersionNumber gets the hardware version number from string.
+func GetHardwareVersionNumber(vstring string) int {
+	vstring = strings.TrimPrefix(vstring, "vmx-")
+	v, err := strconv.Atoi(vstring)
+	if err != nil {
+		log.Printf("[DEBUG] Unable to parse hardware version: %s", vstring)
+	}
+	return v
+}
+
+// SetHardwareVersion sets the virtual machine's hardware version. The virtual
+// machine must be powered off, and the version can only be increased.
+func SetHardwareVersion(vm *object.VirtualMachine, target int) error {
+	// First get current and target versions and validate
+	tv := GetHardwareVersionID(target)
+	vprops, err := Properties(vm)
+	if err != nil {
+		return err
+	}
+	cv := vprops.Config.Version
+	// Skip the rest if there is no version change.
+	if cv == tv || tv == "" {
+		return nil
+	}
+	if err := ValidateHardwareVersion(GetHardwareVersionNumber(cv), target); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), provider.DefaultAPITimeout)
+	defer cancel()
+
+	task, err := vm.UpgradeVM(ctx, tv)
+	_, err = task.WaitForResult(ctx, nil)
+	return err
+}
+
+// ValidateHardwareVersion checks that the target hardware version is equal to
+// or greater than the current hardware version.
+func ValidateHardwareVersion(current, target int) error {
+	switch {
+	case target == 0:
+		return nil
+	case target < current:
+		return fmt.Errorf("Cannot downgrade virtual machine hardware version. current: %d, target: %d", current, target)
+	}
+	return nil
 }

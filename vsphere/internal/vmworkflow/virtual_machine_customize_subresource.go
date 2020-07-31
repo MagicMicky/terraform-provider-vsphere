@@ -6,9 +6,9 @@ import (
 	"net"
 	"regexp"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/helper/validation"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -192,6 +192,7 @@ func VirtualMachineCustomizeSchema() map[string]*schema.Schema {
 				"product_key": {
 					Type:        schema.TypeString,
 					Optional:    true,
+					Sensitive:   true,
 					Description: "The product key for this virtual machine.",
 				},
 			}},
@@ -201,6 +202,7 @@ func VirtualMachineCustomizeSchema() map[string]*schema.Schema {
 		"windows_sysprep_text": {
 			Type:          schema.TypeString,
 			Optional:      true,
+			Sensitive:     true,
 			ConflictsWith: []string{cKeyPrefix + "." + "linux_options", cKeyPrefix + "." + "windows_options"},
 			Description:   "Use this option to specify a windows sysprep file directly.",
 		},

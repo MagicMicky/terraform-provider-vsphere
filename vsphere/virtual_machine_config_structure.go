@@ -5,12 +5,13 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/helper/validation"
-	"github.com/hashicorp/terraform/terraform"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/structure"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/viapi"
-	"github.com/terraform-providers/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/spbm"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/structure"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/viapi"
+	"github.com/hashicorp/terraform-provider-vsphere/vsphere/internal/helper/virtualmachine"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -121,6 +122,12 @@ func schemaVirtualMachineConfigSpec() map[string]*schema.Schema {
 			Type:        schema.TypeBool,
 			Optional:    true,
 			Description: "Enable logging on this virtual machine.",
+			DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+				if len(d.Get("ovf_deploy").([]interface{})) > 0 {
+					return true
+				}
+				return false
+			},
 		},
 
 		// ToolsConfigInfo
@@ -212,6 +219,12 @@ func schemaVirtualMachineConfigSpec() map[string]*schema.Schema {
 			Optional:    true,
 			Default:     1024,
 			Description: "The size of the virtual machine's memory, in MB.",
+			DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+				if len(d.Get("ovf_deploy").([]interface{})) > 0 {
+					return true
+				}
+				return false
+			},
 		},
 		"memory_hot_add_enabled": {
 			Type:        schema.TypeBool,
@@ -229,12 +242,24 @@ func schemaVirtualMachineConfigSpec() map[string]*schema.Schema {
 			Type:        schema.TypeString,
 			Optional:    true,
 			Description: "User-provided description of the virtual machine.",
+			DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+				if len(d.Get("ovf_deploy").([]interface{})) > 0 && new == "" {
+					return true
+				}
+				return false
+			},
 		},
 		"guest_id": {
 			Type:        schema.TypeString,
 			Optional:    true,
-			Default:     "other-64",
+			Computed:    true,
 			Description: "The guest ID for the operating system.",
+			DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+				if len(d.Get("ovf_deploy").([]interface{})) > 0 {
+					return true
+				}
+				return false
+			},
 		},
 		"alternate_guest_name": {
 			Type:        schema.TypeString,
@@ -252,6 +277,7 @@ func schemaVirtualMachineConfigSpec() map[string]*schema.Schema {
 			Type:        schema.TypeMap,
 			Optional:    true,
 			Description: "Extra configuration data for this virtual machine. Can be used to supply advanced parameters not normally in configuration, such as instance metadata, or configuration data for OVF images.",
+			Elem:        &schema.Schema{Type: schema.TypeString},
 		},
 		"vapp": {
 			Type:        schema.TypeList,
@@ -275,6 +301,18 @@ func schemaVirtualMachineConfigSpec() map[string]*schema.Schema {
 			Type:        schema.TypeString,
 			Computed:    true,
 			Description: "The UUID of the virtual machine. Also exposed as the ID of the resource.",
+		},
+		"storage_policy_id": {
+			Type:        schema.TypeString,
+			Optional:    true,
+			Description: "The ID of the storage policy to assign to the virtual machine home directory.",
+		},
+		"hardware_version": {
+			Type:         schema.TypeInt,
+			Optional:     true,
+			ValidateFunc: validation.IntBetween(4, 17),
+			Description:  "The hardware version for the virtual machine.",
+			Computed:     true,
 		},
 	}
 	structure.MergeSchema(s, schemaVirtualMachineResourceAllocation())
@@ -751,6 +789,16 @@ func expandMemorySizeConfig(d *schema.ResourceData) int64 {
 	return newMem
 }
 
+// expandVirtualMachineProfileSpec reads storage policy ID from ResourceData and
+// returns VirtualMachineProfileSpec.
+func expandVirtualMachineProfileSpec(d *schema.ResourceData) []types.BaseVirtualMachineProfileSpec {
+	if policyID := d.Get("storage_policy_id").(string); policyID != "" {
+		return spbm.PolicySpecByID(policyID)
+	}
+
+	return nil
+}
+
 // expandVirtualMachineConfigSpec reads certain ResourceData keys and
 // returns a VirtualMachineConfigSpec.
 func expandVirtualMachineConfigSpec(d *schema.ResourceData, client *govmomi.Client) (types.VirtualMachineConfigSpec, error) {
@@ -784,6 +832,8 @@ func expandVirtualMachineConfigSpec(d *schema.ResourceData, client *govmomi.Clie
 		NestedHVEnabled:              getBoolWithRestart(d, "nested_hv_enabled"),
 		VPMCEnabled:                  getBoolWithRestart(d, "cpu_performance_counters_enabled"),
 		LatencySensitivity:           expandLatencySensitivity(d),
+		VmProfile:                    expandVirtualMachineProfileSpec(d),
+		Version:                      virtualmachine.GetHardwareVersionID(d.Get("hardware_version").(int)),
 	}
 
 	return obj, nil
@@ -810,6 +860,7 @@ func flattenVirtualMachineConfigInfo(d *schema.ResourceData, obj *types.VirtualM
 	d.Set("cpu_performance_counters_enabled", obj.VPMCEnabled)
 	d.Set("change_version", obj.ChangeVersion)
 	d.Set("uuid", obj.Uuid)
+	d.Set("hardware_version", virtualmachine.GetHardwareVersionNumber(obj.Version))
 
 	if err := flattenToolsConfigInfo(d, obj.Tools); err != nil {
 		return err
@@ -864,6 +915,9 @@ func expandVirtualMachineConfigSpecChanged(d *schema.ResourceData, client *govmo
 	log.Printf("[DEBUG] %s: Expanding of old config complete", resourceVSphereVirtualMachineIDString(d))
 
 	newSpec, err := expandVirtualMachineConfigSpec(d, client)
+	// Don't include the hardware version in the UpdateSpec. It is only needed
+	// when created new VMs.
+	newSpec.Version = ""
 	if err != nil {
 		return types.VirtualMachineConfigSpec{}, false, err
 	}
